@@ -2,6 +2,8 @@
 from fancy_einsum import einsum
 from typing import Union, Optional, Tuple
 import numpy as np
+import torch as t
+from collections import namedtuple
 
 def einsum_trace(mat):
     return einsum("i i", mat)
@@ -19,11 +21,8 @@ def einsum_outer(vec1, vec2):
     return einsum("i, j -> i j", vec1, vec2)
 
 
-
 # Section 2
 
-import torch as t
-from collections import namedtuple
 TestCase = namedtuple("TestCase", ["output", "size", "stride"])
 
 test_cases = [
