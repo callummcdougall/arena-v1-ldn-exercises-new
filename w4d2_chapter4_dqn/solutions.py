@@ -38,7 +38,7 @@ from w3d5_chapter4_tabular.utils import make_env
 from w4d2_chapter4_dqn import utils
 
 MAIN = __name__ == "__main__"
-FROM_CMD = True
+TESTING = False
 
 # %%
 
@@ -57,7 +57,7 @@ class QNetwork(nn.Module):
     def forward(self, x: t.Tensor) -> t.Tensor:
         return self.layers(x)
 
-if MAIN and not FROM_CMD:
+if MAIN and TESTING:
     net = QNetwork(dim_observation=4, num_actions=2)
     n_params = sum((p.nelement() for p in net.parameters()))
     print(net)
@@ -134,14 +134,14 @@ class ReplayBuffer:
         samples = [t.as_tensor(arr_list[indices], device=device) for arr_list in self.buffer]
         return ReplayBufferSamples(*samples)
 
-if MAIN and not FROM_CMD:
+if MAIN and TESTING:
     utils.test_replay_buffer_single(ReplayBuffer)
     utils.test_replay_buffer_deterministic(ReplayBuffer)
     utils.test_replay_buffer_wraparound(ReplayBuffer)
 
 # %%
 
-if MAIN and not FROM_CMD:
+if MAIN and TESTING:
     rb = ReplayBuffer(buffer_size=256, num_actions=2, observation_shape=(4,), num_environments=1, seed=0)
     envs = gym.vector.SyncVectorEnv([utils.make_env("CartPole-v1", 0, 0, False, "test")])
     obs = envs.reset()
@@ -179,7 +179,7 @@ def linear_schedule(
     return start_e + (end_e - start_e) * min(current_step / (exploration_fraction * total_timesteps), 1)
 
 
-if MAIN and not FROM_CMD:
+if MAIN and TESTING:
     epsilons = [
         linear_schedule(step, start_e=1.0, end_e=0.05, exploration_fraction=0.5, total_timesteps=500)
         for step in range(500)
@@ -213,7 +213,7 @@ def epsilon_greedy_policy(
         q_scores = q_network(obs)
         return q_scores.argmax(-1).detach().cpu().numpy()
 
-if MAIN and not FROM_CMD:
+if MAIN and TESTING:
     utils.test_epsilon_greedy_policy(epsilon_greedy_policy)
 
 # %%
@@ -248,7 +248,7 @@ class Probe1(gym.Env):
         return np.array([0.0])
 
 gym.envs.registration.register(id="Probe1-v0", entry_point=Probe1)
-if MAIN: # and not FROM_CMD:
+if MAIN and TESTING:
     env = gym.make("Probe1-v0")
     assert env.observation_space.shape == (1,)
     assert env.action_space.shape == ()
@@ -495,17 +495,6 @@ def log(
 
 # %%
 
-if MAIN:
-    if "ipykernel_launcher" in os.path.basename(sys.argv[0]):
-        filename = globals().get("__file__", "<filename of this script>")
-        print(f"Try running this file from the command line instead: python {os.path.basename(filename)} --help")
-        args = DQNArgs()
-    else:
-        args = parse_args()
-    # train_dqn(args)
-
-# %%
-
 def train_dqn(args: DQNArgs):
     (run_name, writer, rng, device, envs) = setup(args)
 
@@ -594,6 +583,7 @@ def train_dqn(args: DQNArgs):
     envs.close()
     writer.close()
 
+# %%
 
 if MAIN:
     if "ipykernel_launcher" in os.path.basename(sys.argv[0]):
@@ -603,3 +593,5 @@ if MAIN:
     else:
         args = parse_args()
     train_dqn(args)
+
+# %%
