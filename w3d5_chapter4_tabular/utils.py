@@ -30,9 +30,7 @@ pi_suicidal = np.array([1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0], dtype=int)  # short
 pi_immortal = np.array([2, 3, 3, 0, 1, 0, 2, 0, 2, 3, 3, 3], dtype=int)  # hide behind wall
 
 policies = np.stack((pi_caution, pi_risky, pi_suicidal, pi_immortal, pi_up))
-
 values = np.array(list(map(lambda pi: policy_eval_exact(norvig, pi, gamma), policies)))
-
 
 def linear_schedule(current_step: int, start_e: float, end_e: float, exploration_fraction: float, total_timesteps: int) -> float:
     """Return the appropriate epsilon for the current step.
