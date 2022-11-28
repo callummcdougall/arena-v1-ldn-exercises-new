@@ -8,8 +8,6 @@ import gym.envs.registration
 from gym.utils import seeding
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from w3d5_chapter4_tabular import solutions
-import solutions
 from typing import Tuple
 from dataclasses import asdict
 
@@ -18,8 +16,12 @@ def set_seed(seed):
     np.random.seed(seed)
     t.manual_seed(seed)
 
+# from w3d5_chapter4_tabular import solutions
+
+from w3d5_chapter4_tabular.solutions import Norvig, policy_eval_exact, policy_eval_numerical, policy_improvement
+
 gamma = 0.9
-norvig = solutions.Norvig(-0.04)
+norvig = Norvig(-0.04)
 
 pi_up = np.zeros(12, dtype=int)  # always go up
 pi_caution = np.array([1, 1, 1, 0, 0, 0, 0, 0, 0, 3, 3, 3], dtype=int)  # cautiously walk towards +1
@@ -29,7 +31,7 @@ pi_immortal = np.array([2, 3, 3, 0, 1, 0, 2, 0, 2, 3, 3, 3], dtype=int)  # hide 
 
 policies = np.stack((pi_caution, pi_risky, pi_suicidal, pi_immortal, pi_up))
 
-values = np.array(list(map(lambda pi: solutions.policy_eval_exact(norvig, pi, gamma), policies)))
+values = np.array(list(map(lambda pi: policy_eval_exact(norvig, pi, gamma), policies)))
 
 
 def linear_schedule(current_step: int, start_e: float, end_e: float, exploration_fraction: float, total_timesteps: int) -> float:
@@ -47,7 +49,7 @@ def test_linear_schedule(linear_schedule):
     actual = t.tensor([linear_schedule(step, start_e=1.0, end_e=0.05, exploration_fraction=0.5, total_timesteps=500) 
         for step in range(500)])
     assert expected.shape == actual.shape
-    t.testing.assert_close(expected, actual)
+    np.testing.assert_allclose(expected, actual)
 
 def test_policy_eval(policy_eval, exact=False):
 
@@ -56,9 +58,9 @@ def test_policy_eval(policy_eval, exact=False):
     for pi in policies:
         pi = np.random.randint(norvig.num_actions, size=(norvig.num_states,))
         if exact:
-            expected = solutions.policy_eval_exact(norvig, pi, gamma=0.9)
+            expected = policy_eval_exact(norvig, pi, gamma=0.9)
         else:
-            expected = solutions.policy_eval_numerical(norvig, pi, gamma=0.9, eps=1e-8)
+            expected = policy_eval_numerical(norvig, pi, gamma=0.9, eps=1e-8)
         actual = policy_eval(norvig, pi, gamma=0.9)
         assert actual.shape == (norvig.num_states,)
         t.testing.assert_close(t.tensor(expected), t.tensor(actual))
@@ -66,7 +68,7 @@ def test_policy_eval(policy_eval, exact=False):
 
 def test_policy_improvement(policy_improvement):
     for v in values:
-        expected = solutions.policy_improvement(norvig, v, gamma)
+        expected = policy_improvement(norvig, v, gamma)
         actual = policy_improvement(norvig, v, gamma)
         t.testing.assert_close(t.tensor(expected), t.tensor(actual))
 
@@ -79,10 +81,10 @@ def test_find_optimal_policy(find_optimal_policy):
 
     gamma = 0.99
 
-    env_mild = solutions.Norvig(-0.02)
-    env_painful = solutions.Norvig(-0.1)
-    env_hell = solutions.Norvig(-10)
-    env_heaven = solutions.Norvig(10)
+    env_mild = Norvig(-0.02)
+    env_painful = Norvig(-0.1)
+    env_hell = Norvig(-10)
+    env_heaven = Norvig(10)
     enviros = [env_mild, env_painful, env_hell, env_heaven]
 
     for i in range(4):
@@ -91,8 +93,8 @@ def test_find_optimal_policy(find_optimal_policy):
         # print("Expected Policy")
         # print(enviros[i].render(expected_pi_opt))  # maybe have it print the policy in a nice way?
         # print(enviros[i].render(actual_pi_opt))
-        val1 = solutions.policy_eval_exact(norvig, expected_pi_opt, gamma)
-        val2 = solutions.policy_eval_exact(norvig, actual_pi_opt, gamma)
+        val1 = policy_eval_exact(norvig, expected_pi_opt, gamma)
+        val2 = policy_eval_exact(norvig, actual_pi_opt, gamma)
         t.testing.assert_close(t.tensor(val1), t.tensor(val2))
 
 
