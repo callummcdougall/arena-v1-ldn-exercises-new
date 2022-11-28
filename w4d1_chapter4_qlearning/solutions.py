@@ -1,8 +1,5 @@
 # %%
 
-import os
-os.chdir(r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured")
-
 from dataclasses import dataclass
 from typing import Optional, Union, List
 import numpy as np
