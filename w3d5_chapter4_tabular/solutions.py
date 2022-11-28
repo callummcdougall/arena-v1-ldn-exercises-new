@@ -12,9 +12,7 @@ from tqdm import tqdm
 from PIL import Image, ImageDraw
 from fancy_einsum import einsum
 from einops import rearrange
-
 import os
-os.chdir(r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured")
 
 MAIN = __name__ == "__main__"
 Arr = np.ndarray

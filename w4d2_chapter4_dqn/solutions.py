@@ -6,9 +6,6 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 import sys
 from pathlib import Path
-os.chdir(r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured")
-sys.path.append(str(Path(".").resolve()))
-
 import argparse
 import sys
 import random
@@ -38,7 +35,7 @@ from w3d5_chapter4_tabular.utils import make_env
 from w4d2_chapter4_dqn import utils
 
 MAIN = __name__ == "__main__"
-TESTING = False
+TESTING = True
 
 # %%
 
