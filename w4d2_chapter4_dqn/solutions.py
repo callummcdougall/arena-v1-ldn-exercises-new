@@ -145,10 +145,6 @@ if MAIN and TESTING:
     for i in range(512):
         actions = np.array([0])
         (next_obs, rewards, dones, infos) = envs.step(actions)
-        real_next_obs = next_obs.copy()
-        for (i, done) in enumerate(dones):
-            if done:
-                real_next_obs[i] = infos[i]["terminal_observation"]
         rb.add(obs, actions, rewards, dones, next_obs)
         obs = next_obs
     sample = rb.sample(128, t.device("cpu"))
@@ -157,11 +153,6 @@ if MAIN and TESTING:
     df.plot(subplots=True, title="Replay Buffer")
     df2 = pd.DataFrame(sample.observations, columns=columns)
     df2.plot(subplots=True, title="Shuffled Replay Buffer")
-
-    # df = pd.DataFrame(rb.observations, columns=columns)
-    # px.line(df, facet_row="variable", title="Replay Buffer").show()
-    # df2 = pd.DataFrame(sample.observations, columns=columns)
-    # px.line(df2, facet_row="variable", title="Shuffled Replay Buffer").show()
 # %%
 
 def linear_schedule(
@@ -518,10 +509,6 @@ def train_dqn(args: DQNArgs):
         next_obs, rewards, dones, infos = envs.step(actions)
 
         "Boilerplate to handle the terminal observation case"
-        real_next_obs = next_obs.copy()
-        for (i, done) in enumerate(dones):
-            if done:
-                real_next_obs[i] = infos[i]["terminal_observation"]
         rb.add(obs, actions, rewards, dones, next_obs)
         obs = next_obs
         if step > args.learning_starts and step % args.train_frequency == 0:
