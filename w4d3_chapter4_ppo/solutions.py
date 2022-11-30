@@ -3,8 +3,6 @@ import os
 import random
 import time
 import sys
-os.chdir(r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured")
-sys.path.append(r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured")
 from dataclasses import dataclass
 import re
 import numpy as np

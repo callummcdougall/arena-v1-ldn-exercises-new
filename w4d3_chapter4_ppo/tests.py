@@ -5,10 +5,6 @@ from torch import nn
 from torch.distributions.categorical import Categorical
 Arr = np.ndarray
 
-import os, sys
-os.chdir(r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured")
-sys.path.append(r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured")
-
 from w4d3_chapter4_ppo.utils import make_env
 from w4d3_chapter4_ppo import solutions
 
