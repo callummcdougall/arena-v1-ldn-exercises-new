@@ -3,6 +3,8 @@ import os
 import random
 import time
 import sys
+os.chdir(r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured")
+sys.path.append(r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured")
 from dataclasses import dataclass
 import re
 import numpy as np
@@ -15,8 +17,8 @@ from torch.distributions.categorical import Categorical
 from torch.utils.tensorboard import SummaryWriter
 from gym.spaces import Discrete
 from einops import rearrange
+
 from w4d3_chapter4_ppo.utils import make_env, ppo_parse_args
-from w4d3_chapter4_ppo import utils
 
 device = t.device("cuda" if t.cuda.is_available() else "cpu")
 
@@ -199,10 +201,9 @@ def make_optimizer(agent: Agent, num_updates: int, initial_lr: float, end_lr: fl
     return (optimizer, scheduler)
 
 # %%
-
 @dataclass
 class PPOArgs:
-    exp_name: str = os.path.basename(__file__).rstrip(".py")
+    exp_name: str = os.path.basename(globals().get("__file__", "PPO_implementation").rstrip(".py"))
     seed: int = 1
     torch_deterministic: bool = True
     cuda: bool = True
@@ -276,7 +277,15 @@ def train_ppo(args):
     start_time = time.time()
     next_obs = torch.Tensor(envs.reset()).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
-    for _ in range(num_updates):
+
+    if RUNNING_FROM_FILE:
+        from tqdm import tqdm
+        progress_bar = tqdm(range(num_updates))
+        range_object = progress_bar
+    else:
+        range_object = range(num_updates)
+    
+    for _ in range_object:
         for i in range(0, args.num_steps):
 
             global_step += args.num_envs
@@ -303,7 +312,11 @@ def train_ppo(args):
 
             for item in info:
                 if "episode" in item.keys():
-                    print(f"global_step={global_step}, episodic_return={item['episode']['r']}")
+                    log_string = f"global_step={global_step}, episodic_return={int(item['episode']['r'])}"
+                    if RUNNING_FROM_FILE:
+                        progress_bar.set_description(log_string)
+                    else:
+                        print(log_string)
                     writer.add_scalar("charts/episodic_return", item["episode"]["r"], global_step)
                     writer.add_scalar("charts/episodic_length", item["episode"]["l"], global_step)
                     break
@@ -359,8 +372,8 @@ def train_ppo(args):
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
-        if global_step % 10 == 0:
-            print("steps per second (SPS):", int(global_step / (time.time() - start_time)))
+        # if global_step % 10 == 0:
+        #     print("steps per second (SPS):", int(global_step / (time.time() - start_time)))
 
     "If running one of the Probe environments, will test if the learned q-values are\n    sensible after training. Useful for debugging."
     obs_for_probes = [[[0.0]], [[-1.0], [+1.0]], [[0.0], [1.0]], [[0.0]], [[0.0], [1.0]]]
@@ -382,7 +395,7 @@ def train_ppo(args):
 if MAIN:
     if RUNNING_FROM_FILE:
         filename = globals().get("__file__", "<filename of this script>")
-        print(f"Try running this file from the command line instead: python {os.path.basename(filename)} --help")
+        print(f"Try running this file from the command line instead:\n\tpython {os.path.basename(filename)} --help")
         args = PPOArgs()
     else:
         args = ppo_parse_args()
@@ -398,32 +411,108 @@ from gym.error import DependencyNotInstalled
 import math
 
 class EasyCart(CartPoleEnv):
-
     def step(self, action):
-        obs, rew, done, info = super().step(action)
-        if "SOLUTION":
-            x, v, theta, omega = obs
-            reward = 1 - (x/2.5)**2
-            return obs, reward, done, info
+        (obs, rew, done, info) = super().step(action)
+
+        cart_posn, card_vel, pole_angle, pole_vel = obs
+
+        # First reward: position should be close to the center
+        # result: 
+        reward_1 = 1 - (cart_posn / 2.5) ** 2
+
+        reward = reward_1
+
+        return (obs, reward, done, info)
 
 gym.envs.registration.register(id="EasyCart-v0", entry_point=EasyCart, max_episode_steps=500)
 
+if MAIN:
+    if RUNNING_FROM_FILE:
+        filename = globals().get("__file__", "<filename of this script>")
+        print(f"Try running this file from the command line instead:\n\tpython {os.path.basename(filename)} --help")
+        args = PPOArgs()
+        args.env_id = "EasyCart-v0"
+    else:
+        args = ppo_parse_args()
+    train_ppo(args)
+# %%
 
 
-class SpinCart(CartPoleEnv):
 
-    def step(self, action):
-        obs, rew, done, info = super().step(action)
-        if "SOLUTION":
-            x, v, theta, omega = obs
-            reward = 0.5*abs(omega) - (x/2.5)**4
-            if abs(x) > self.x_threshold:
-                done = True
-            else:
-                done = False 
-            return obs, reward, done, info
 
-gym.envs.registration.register(id="SpinCart-v0", entry_point=SpinCart, max_episode_steps=500)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# class EasyCart(CartPoleEnv):
+
+#     def step(self, action):
+#         obs, rew, done, info = super().step(action)
+#         if "SOLUTION":
+#             x, v, theta, omega = obs
+#             reward = 1 - (x/2.5)**2
+#             return obs, reward, done, info
+
+
+# class SpinCart(CartPoleEnv):
+
+#     def step(self, action):
+#         obs, rew, done, info = super().step(action)
+#         if "SOLUTION":
+#             x, v, theta, omega = obs
+#             reward = 0.5*abs(omega) - (x/2.5)**4
+#             if abs(x) > self.x_threshold:
+#                 done = True
+#             else:
+#                 done = False 
+#             return obs, reward, done, info
+
+# gym.envs.registration.register(id="SpinCart-v0", entry_point=SpinCart, max_episode_steps=500)
 
 # class DanceCart(CartPoleEnv):
 
@@ -472,7 +561,7 @@ gym.envs.registration.register(id="SpinCart-v0", entry_point=SpinCart, max_episo
 if MAIN:
     if "ipykernel_launcher" in os.path.basename(sys.argv[0]):
         filename = globals().get("__file__", "<filename of this script>")
-        print(f"Try running this file from the command line instead: python {os.path.basename(filename)} --help")
+        print(f"Try running this file from the command line instead:\n\tpython {os.path.basename(filename)} --help")
         args = PPOArgs()
     else:
         args = ppo_parse_args()
