@@ -1,17 +1,17 @@
 # %%
 import torch as t
-from typing import Union, Optional, Tuple
+from typing import Tuple
 from torch import nn
 from einops import rearrange
 from einops.layers.torch import Rearrange
 import os
 import torchinfo
-from collections import OrderedDict
 from tqdm import tqdm
 from torchvision import transforms
 from torch.utils.data import DataLoader
 import wandb
 import time
+from dataclasses import dataclass
 import sys
 
 p = r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured"
@@ -25,7 +25,7 @@ device = t.device("cuda:0" if t.cuda.is_available() else "cpu")
 
 import w5d1_utils
 import w5d1_tests
-from w0d2_chapter0_convolutions.solutions import pad1d, pad2d, conv1d_minimal, conv2d_minimal, Conv2d, Linear, ReLU
+from w0d2_chapter0_convolutions.solutions import pad1d, pad2d, conv1d_minimal, conv2d_minimal, Conv2d, Linear, ReLU, Pair, IntOrPair
 from w0d3_chapter0_resnets.solutions import BatchNorm2d, Sequential
 
 MAIN = __name__ == "__main__"
@@ -34,10 +34,8 @@ MAIN = __name__ == "__main__"
 
 def conv_transpose1d_minimal(x: t.Tensor, weights: t.Tensor) -> t.Tensor:
     """Like torch's conv_transpose1d using bias=False and all other keyword arguments left at their default values.
-
     x: shape (batch, in_channels, width)
     weights: shape (in_channels, out_channels, kernel_width)
-
     Returns: shape (batch, out_channels, output_width)
     """
 
@@ -56,9 +54,7 @@ if MAIN:
 def fractional_stride_1d(x, stride: int = 1):
     '''Returns a version of x suitable for transposed convolutions, i.e. "spaced out" with zeros between its values.
     This spacing only happens along the last dimension.
-
     x: shape (batch, in_channels, width)
-
     Example: 
         x = [[[1, 2, 3], [4, 5, 6]]]
         stride = 2
@@ -75,13 +71,13 @@ def fractional_stride_1d(x, stride: int = 1):
     
     return x_new
 
+if MAIN:
+    w5d1_tests.test_fractional_stride_1d(fractional_stride_1d)
 
 def conv_transpose1d(x, weights, stride: int = 1, padding: int = 0) -> t.Tensor:
     """Like torch's conv_transpose1d using bias=False and all other keyword arguments left at their default values.
-
     x: shape (batch, in_channels, width)
     weights: shape (out_channels, in_channels, kernel_width)
-
     Returns: shape (batch, out_channels, output_width)
     """
 
@@ -106,9 +102,6 @@ if MAIN:
     w5d1_tests.test_conv_transpose1d(conv_transpose1d)
 
 # %%
-
-IntOrPair = Union[int, Tuple[int, int]]
-Pair = Tuple[int, int]
 
 def force_pair(v: IntOrPair) -> Pair:
     '''Convert v to a pair of int, if it isn't already.'''
@@ -138,11 +131,8 @@ def fractional_stride_2d(x, stride_h: int, stride_w: int):
 
 def conv_transpose2d(x, weights, stride: IntOrPair = 1, padding: IntOrPair = 0) -> t.Tensor:
     """Like torch's conv_transpose2d using bias=False
-
     x: shape (batch, in_channels, height, width)
     weights: shape (out_channels, in_channels, kernel_height, kernel_width)
-
-
     Returns: shape (batch, out_channels, output_height, output_width)
     """
 
@@ -179,7 +169,6 @@ class ConvTranspose2d(nn.Module):
     ):
         """
         Same as torch.nn.ConvTranspose2d with bias=False.
-
         Name your weight field `self.weight` for compatibility with the tests.
         """
         super().__init__()
@@ -257,12 +246,11 @@ class Generator(nn.Module):
 
     def __init__(
         self,
-        latent_dim_size = 100,
-        img_size = 64,
-        img_channels = 3,
-        generator_num_features = 1024,
-        n_layers = 4,
-        **kwargs
+        latent_dim_size: int,
+        img_size: int,
+        img_channels: int,
+        generator_num_features: int,
+        n_layers: int,
     ):
         super().__init__()
 
@@ -310,11 +298,10 @@ class Discriminator(nn.Module):
 
     def __init__(
         self,
-        img_size = 64,
-        img_channels = 3,
-        generator_num_features = 1024,
-        n_layers = 4,
-        **kwargs
+        img_size: int,
+        img_channels: int,
+        generator_num_features: int,
+        n_layers: int,
     ):
         super().__init__()
 
@@ -409,7 +396,6 @@ celeb_mini_DCGAN = DCGAN(**celeba_mini_config).to(device).train()
 
 if MAIN:
     image_size = 64
-    batch_size = 8
 
     from torchvision import transforms, datasets
 
@@ -421,17 +407,14 @@ if MAIN:
     ])
 
     trainset = datasets.ImageFolder(
-        root=r"./data",
+        root=r"celeba",
         transform=transform
     )
-
-    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True) # num_workers=2
 
     w5d1_utils.show_images(trainset, rows=3, cols=5)
 
 # ======================== MNIST ========================
 
-# batch_size = 64
 # img_size = 24
 
 # from torchvision import datasets, transforms
@@ -445,60 +428,66 @@ if MAIN:
 
 # trainset = datasets.MNIST(root="./data", train=True, transform=transform, download=True)
 
-# trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
-
-# importlib.reload(utils)
-# utils.show_images(trainset.data)
-
 
 # %%
-def train_generator_discriminator(
-    netG: Generator, 
-    netD: Discriminator, 
-    optG,
-    optD,
-    trainloader,
-    epochs: int,
-    max_epoch_duration: Optional[Union[int, float]] = None,
-    log_netG_output_interval: Optional[Union[int, float]] = None,
-    use_wandb: bool = True
-):
 
-    # This code controls how we print output from our model at specified times, and controls early epoch termination.
-    t0 = time.time()
+@dataclass
+class DCGANargs():
+    latent_dim_size: int
+    img_size: int
+    img_channels: int
+    generator_num_features: int
+    n_layers: int
+    trainset: datasets.ImageFolder
+    batch_size: int = 8
+    epochs: int = 1
+    lr: float = 0.0002
+    betas: Tuple[float] = (0.5, 0.999)
+    track: bool = True
+    cuda: bool = True
+    seconds_between_image_logs: int = 40
+
+def train_DCGAN(args: DCGANargs) -> DCGAN:
+
+    last_log_time = time.time()
     n_examples_seen = 0
-    if max_epoch_duration is None: max_epoch_duration = t.inf
-    if log_netG_output_interval is None: log_netG_output_interval = t.inf
-    last_interval = 0 
 
-    netG.train().to(device)
-    netD.train().to(device)
+    device = t.device("cuda" if args.cuda else "cpu")
 
-    if use_wandb:
+    trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True) # num_workers=2
+
+    model = DCGAN(
+        args.latent_dim_size,
+        args.img_size,
+        args.img_channels,
+        args.generator_num_features,
+        args.n_layers,
+    ).to(device).train()
+
+    if args.track:
         wandb.init()
-
-    for epoch in range(epochs):
+        wandb.watch(model)
+    
+    for epoch in range(args.epochs):
         
-        t0_epoch = time.time()
-        n_examples_seen_this_epoch = 0
-        n_batches_seen_this_epoch = 0
         progress_bar = tqdm(trainloader)
 
-        for img_real, label in progress_bar:
+        optG = t.optim.Adam(model.netG.parameters(), lr=args.lr, betas=args.betas)
+        optD = t.optim.Adam(model.netD.parameters(), lr=args.lr, betas=args.betas)
+
+        for img_real, label in progress_bar: # remember that label is not used
 
             img_real = img_real.to(device)
-            label = label.to(device)
-            current_batch_size = img_real.size(0)
-            noise = t.randn(current_batch_size, netG.latent_dim_size).to(device)
+            noise = t.randn(args.batch_size, model.netG.latent_dim_size).to(device)
 
             # ====== DISCRIMINIATOR TRAINING LOOP: maximise log(D(x)) + log(1-D(G(z))) ======
 
             # Zero gradients
             optD.zero_grad()
             # Calculate the two different components of the objective function
-            D_x = netD(img_real)
-            img_fake = netG(noise)
-            D_G_z = netD(img_fake.detach())
+            D_x = model.netD(img_real)
+            img_fake = model.netG(noise)
+            D_G_z = model.netD(img_fake.detach())
             # Add them to get the objective function
             lossD = - (t.log(D_x).mean() + t.log(1 - D_G_z).mean())
             # Gradient descent step
@@ -510,45 +499,36 @@ def train_generator_discriminator(
             # Zero gradients
             optG.zero_grad()
             # Calculate the objective function
-            D_G_z = netD(img_fake)
+            D_G_z = model.netD(img_fake)
             lossG = - (t.log(D_G_z).mean())
             # Gradient descent step
             lossG.backward()
             optG.step()
 
             # Update progress bar
-            progress_bar.set_description(f"epoch={epoch}, steps={n_batches_seen_this_epoch}/{len(trainloader)}, lossD={lossD.item():.4f}, lossG={lossG.item():.4f}")
-            n_examples_seen += current_batch_size
-            n_examples_seen_this_epoch += current_batch_size
-            n_batches_seen_this_epoch += 1
-            if use_wandb:
-                wandb.log(dict(lossD=lossD, lossG=lossG), step=n_examples_seen)
+            progress_bar.set_description(f"{epoch=}, lossD={lossD.item():.4f}, lossG={lossG.item():.4f}")
+            n_examples_seen += img_real.shape[0]
 
             # Log output, if required
-            if time.time() - t0 > log_netG_output_interval * (last_interval + 1):
-                last_interval += 1
-                if use_wandb:
-                    arrays = get_generator_output(netG) # shape (8, 64, 64, 3)
+            if args.track:
+                wandb.log(dict(lossD=lossD, lossG=lossG), step=n_examples_seen)
+                if time.time() - last_log_time > args.seconds_between_image_logs:
+                    last_log_time = time.time()
+                    arrays = get_generator_output(model.netG) # shape (8, 64, 64, 3)
                     images = [wandb.Image(arr) for arr in arrays]
                     wandb.log({"images": images}, step=n_examples_seen)
-            if time.time() - t0_epoch > max_epoch_duration:
-                break
 
-    for model in [netG, netD]:
-        name = model.__class__.__name__
-        dirname = str(wandb.run.dir) if use_wandb else "models"
-        filename = f"{dirname}/{name}.pt"
-        if not os.path.exists(dirname):
-            os.mkdir(dirname)
-        if use_wandb:
-            wandb.save(filename)
+    name = model.__class__.__name__
+    dirname = str(wandb.run.dir) if args.track else "models"
+    filename = f"{dirname}/{name}.pt"
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+    if args.track:
         print(f"Saving {name!r} to: {filename!r}")
-        t.save(model.state_dict(), filename)
-
-    if use_wandb:
+        wandb.save(filename)
         wandb.finish()
                 
-    return netG, netD
+    return model
 
 @t.inference_mode()
 def get_generator_output(netG, n_examples=8, rand_seed=0):
@@ -560,42 +540,20 @@ def get_generator_output(netG, n_examples=8, rand_seed=0):
     netG.train()
     return arrays
 
+# %%
+
+if MAIN:
+    model = DCGAN(**celeba_config).to(device).train()
+    # print_param_count(model)
+    x = t.randn(3, 100).to(device)
+    statsG = torchinfo.summary(model.netG, input_data=x)
+    statsD = torchinfo.summary(model.netD, input_data=model.netG(x))
+    print(statsG, statsD)
 
 # %%
 
-netG = Generator(**celeba_mini_config).to(device).train()
-# print_param_count(netG)
-x = t.randn(3, 100).to(device)
-statsG = torchinfo.summary(netG, input_data=x)
-print(statsG, "\n\n")
+if MAIN:
+    args = DCGANargs(**celeba_mini_config, trainset=trainset)
 
-netD = Discriminator(**celeba_mini_config).to(device).train()
-# print_param_count(netD)
-statsD = torchinfo.summary(netD, input_data=netG(x))
-print(statsD)
-
-initialize_weights(netG)
-initialize_weights(netD)
-
-lr = 0.0002
-betas = (0.5, 0.999)
-optG = t.optim.Adam(netG.parameters(), lr=lr, betas=betas)
-optD = t.optim.Adam(netD.parameters(), lr=lr, betas=betas)
-
-epochs = 3
-max_epoch_duration = 240
-log_netG_output_interval = 10
-
-# %%
-
-netG, netD = train_generator_discriminator(
-    netG, 
-    netD, 
-    optG, 
-    optD, 
-    trainloader,
-    epochs, 
-    max_epoch_duration, 
-    log_netG_output_interval
-)
+    model = train_DCGAN(args)
 # %%
