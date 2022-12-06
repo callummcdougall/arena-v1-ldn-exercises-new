@@ -13,6 +13,7 @@ import wandb
 import time
 from dataclasses import dataclass
 import sys
+from torchvision import transforms, datasets
 
 p = r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured"
 # Replace the line above with your own root directory
@@ -397,8 +398,6 @@ celeb_mini_DCGAN = DCGAN(**celeba_mini_config).to(device).train()
 if MAIN:
     image_size = 64
 
-    from torchvision import transforms, datasets
-
     transform = transforms.Compose([
         transforms.Resize((image_size)),
         transforms.CenterCrop(image_size),
@@ -463,6 +462,8 @@ def train_DCGAN(args: DCGANargs) -> DCGAN:
         args.generator_num_features,
         args.n_layers,
     ).to(device).train()
+    optG = t.optim.Adam(model.netG.parameters(), lr=args.lr, betas=args.betas)
+    optD = t.optim.Adam(model.netD.parameters(), lr=args.lr, betas=args.betas)
 
     if args.track:
         wandb.init()
@@ -471,9 +472,6 @@ def train_DCGAN(args: DCGANargs) -> DCGAN:
     for epoch in range(args.epochs):
         
         progress_bar = tqdm(trainloader)
-
-        optG = t.optim.Adam(model.netG.parameters(), lr=args.lr, betas=args.betas)
-        optD = t.optim.Adam(model.netD.parameters(), lr=args.lr, betas=args.betas)
 
         for img_real, label in progress_bar: # remember that label is not used
 

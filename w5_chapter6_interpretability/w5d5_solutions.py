@@ -16,7 +16,7 @@ from sklearn.linear_model import LinearRegression
 from torch import nn
 
 import tests
-from w5d1_transformer import MultiheadAttention, ParenTransformer, SimpleTokenizer
+from w5d5_transformer import MultiheadAttention, ParenTransformer, SimpleTokenizer
 
 # %%
 
