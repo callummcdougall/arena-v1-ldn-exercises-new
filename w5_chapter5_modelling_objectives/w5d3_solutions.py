@@ -2,7 +2,7 @@
 from abc import ABC, abstractmethod
 import time
 from dataclasses import dataclass
-from typing import Any, Optional, Union, Tuple, List, Dict
+from typing import Optional, Union, Tuple, List
 import torch as t
 import torch.nn.functional as F
 from einops import rearrange, repeat
@@ -16,16 +16,17 @@ from einops.layers.torch import Rearrange
 from torch.utils.data import TensorDataset
 from tqdm import tqdm
 from torchvision import datasets
-from torchvision.transforms import Compose, ToTensor, RandomHorizontalFlip, Lambda
 from pathlib import Path
 from fancy_einsum import einsum
 
 MAIN = __name__ == "__main__"
 
 import sys, os
-p = r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured"
+p = r"/home/ubuntu/arena-v2-exercises" # CHANGE THIS TO YOUR PATH
 os.chdir(p)
 sys.path.append(p)
+# os.environ["WANDB_MODE"] = "dryrun"
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 from w0d2_chapter0_convolutions.solutions import Linear, conv2d, force_pair, IntOrPair
 from w0d3_chapter0_resnets.solutions import Sequential
@@ -61,8 +62,8 @@ def gradient_images(n_images: int, img_size: Tuple[int, int, int]) -> t.Tensor:
 
 
 def plot_img(img: t.Tensor, title: Optional[str] = None) -> None:
-    """Plots a single image, with optional title.
-    """
+    '''Plots a single image, with optional title.
+    '''
     img = rearrange(img, "c h w -> h w c").clip(0, 1)
     img = (255 * img).to(t.uint8)
     fig = px.imshow(img, title=title)
@@ -70,31 +71,33 @@ def plot_img(img: t.Tensor, title: Optional[str] = None) -> None:
     fig.show()
 
 def plot_img_grid(imgs: t.Tensor, title: Optional[str] = None, cols: Optional[int] = None) -> None:
-    """Plots a grid of images, with optional title.
-    """
+    '''Plots a grid of images, with optional title.
+    '''
     b = imgs.shape[0]
+    imgs = (255 * imgs).to(t.uint8).squeeze()
+    if imgs.ndim == 3:
+        imgs = repeat(imgs, "b h w -> b 3 h w")
     imgs = rearrange(imgs, "b c h w -> b h w c")
-    imgs = (255 * imgs).to(t.uint8)
-    if cols is None:
-        cols = int(b**0.5) + 1
+    if cols is None: cols = int(b**0.5) + 1
     fig = px.imshow(imgs, facet_col=0, facet_col_wrap=cols, title=title)
-    for annotation in fig.layout.annotations:
-        annotation["text"] = ""
+    for annotation in fig.layout.annotations: annotation["text"] = ""
     fig.show()
 
 def plot_img_slideshow(imgs: t.Tensor, title: Optional[str] = None) -> None:
-    """Plots slideshow of images.
-    """
+    '''Plots slideshow of images.
+    '''
+    imgs = (255 * imgs).to(t.uint8).squeeze()
+    if imgs.ndim == 3:
+        imgs = repeat(imgs, "b h w -> b 3 h w")
     imgs = rearrange(imgs, "b c h w -> b h w c")
-    imgs = (255 * imgs).to(t.uint8)
     fig = px.imshow(imgs, animation_frame=0, title=title)
     fig.show()
 
 if MAIN:
     print("A few samples from the input distribution: ")
-    img_shape = (3, 16, 16)
-    n_images = 5
-    imgs = gradient_images(n_images, img_shape)
+    image_shape = (3, 16, 16)
+    n_images = 3
+    imgs = gradient_images(n_images, image_shape)
     for i in range(n_images):
         plot_img(imgs[i], title=f"Gradient {i+1}/{n_images}")
 
@@ -158,7 +161,7 @@ if MAIN:
 def q_forward_fast(x: t.Tensor, num_steps: int, betas: t.Tensor) -> t.Tensor:
     '''Equivalent to Equation 2 but without a for loop.'''
     alphas = 1 - betas
-    alpha_bar = t.prod(alphas)
+    alpha_bar = t.prod(alphas[:num_steps])
     noise = t.rand_like(x)
     xt = t.sqrt(alpha_bar) * x + t.sqrt(1 - alpha_bar) * noise
     return xt
@@ -290,7 +293,7 @@ if MAIN:
 # %%
 
 class DiffusionModel(nn.Module, ABC):
-    img_shape: Tuple[int, ...]
+    image_shape: Tuple[int, ...]
     noise_schedule: Optional[NoiseSchedule]
 
     @abstractmethod
@@ -300,7 +303,7 @@ class DiffusionModel(nn.Module, ABC):
 @dataclass(frozen=True)
 class TinyDiffuserConfig:
     max_steps: int
-    img_shape: Tuple[int, ...] = (3, 4, 5)
+    image_shape: Tuple[int, ...] = (3, 4, 5)
     hidden_size: int = 128
 
 
@@ -312,11 +315,11 @@ class TinyDiffuser(DiffusionModel):
         super().__init__()
         self.config = config
         self.hidden_size = config.hidden_size
-        self.img_shape = config.img_shape
+        self.image_shape = config.image_shape
         self.noise_schedule = None
         self.max_steps = config.max_steps
 
-        c, h, w = img_shape
+        c, h, w = image_shape
         img_numel = c*h*w
         
         self.mlp = nn.Sequential(*[
@@ -343,11 +346,11 @@ class TinyDiffuser(DiffusionModel):
         return self.mlp(input)
 
 if MAIN:
-    img_shape = (3, 4, 5)
+    image_shape = (3, 4, 5)
     n_images = 5
-    imgs = gradient_images(n_images, img_shape)
+    imgs = gradient_images(n_images, image_shape)
     n_steps = t.zeros(imgs.size(0))
-    model_config = TinyDiffuserConfig(img_shape, 16, 100)
+    model_config = TinyDiffuserConfig(image_shape, 16, 100)
     model = TinyDiffuser(model_config)
     out = model(imgs, n_steps)
     plot_img(out[0].detach(), "Noise prediction of untrained model")
@@ -362,11 +365,12 @@ class DiffusionArgs():
     max_steps: int = 100
     batch_size: int = 128
     seconds_between_image_logs: int = 10
-    n_images_per_log: int = 3
+    n_images_per_log: int = 2
     n_images: int = 50000
     n_eval_images: int = 1000
     cuda: bool = True
     track: bool = True
+    print_samples_at_epoch_end: bool = True
 
 def log_images(
     img: t.Tensor, noised: t.Tensor, noise: t.Tensor, noise_pred: t.Tensor, reconstructed: t.Tensor, num_images: int = 3
@@ -381,6 +385,56 @@ def log_images(
     images = [wandb.Image(i, caption=caption) for i in log_img[:num_images]]
     return images
 
+def sample(model, n_samples: int, return_all_steps: bool = False) -> t.Tensor:
+    """
+    Sample, following Algorithm 2 in the DDPM paper
+
+    model: The trained noise-predictor
+    n_samples: The number of samples to generate
+    return_all_steps: if true, return a list of the reconstructed tensors generated at each step, rather than just the final reconstructed image tensor.
+
+    out: shape (B, C, H, W), the denoised images
+            or (T, B, C, H, W), if return_all_steps=True (where [i,:,:,:,:]th element is result of (i+1) steps of sampling)
+    """
+    schedule = model.noise_schedule
+    assert schedule is not None
+
+    device = next(model.parameters()).device
+    
+    # Creating list of arrays of shape (max_steps, B, C, H, W), to store all the results
+    T = len(schedule)
+    out = t.zeros(T, n_samples, *model.image_shape)
+    model.eval()
+
+    # Algorithm:
+    # STEP (1)
+    x = t.randn(size=(n_samples, *model.image_shape)).to(device)
+    # STEP (2)
+    # for t_ in tqdm(range(T, 0, -1)):
+    for t_ in tqdm(range(T, 0, -1)):
+        # STEP (3)
+        z = t.randn_like(x) if t_ > 1 else 0
+        # STEP (4)
+        alpha = schedule.alpha(t_-1)
+        alpha_bar = schedule.alpha_bar(t_-1)
+        beta = schedule.beta(t_-1)
+        sigma = beta ** 0.5
+        # sigma=0 works better here for the gradients problem
+        t_full = t.full((n_samples,), fill_value=t_-1, device=device)
+        eps = model(x, t_full)
+        sf_1 = 1 / alpha.sqrt()
+        sf_2 = (1 - alpha) / ((1 - alpha_bar).sqrt())
+        x = sf_1 * (x - sf_2 * eps) + sigma * z
+        out[-t_] = x
+        # STEP (5)
+
+    # STEP (6)
+    if return_all_steps:
+        return out
+    else:
+        return out[-1]
+
+# %%
 
 def train(
     model: DiffusionModel, 
@@ -398,6 +452,7 @@ def train(
         print(f"Training with config: {config}")
 
     device = t.device("cuda" if args.cuda and t.cuda.is_available() else "cpu")
+    model.to(device)
     
     trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True)
     testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=True)
@@ -410,7 +465,8 @@ def train(
     n_examples_seen = 0
     for epoch in range(args.epochs):
         progress_bar = tqdm(trainloader)
-        for (img,) in progress_bar:
+        # Using *labels so that we can use the same code for both MNIST and fashionMNIST
+        for i, (img, *labels) in enumerate(progress_bar):
 
             img = img.to(device)
             num_steps, noise, noised = noise_img(img, schedule, args.max_steps)
@@ -428,16 +484,22 @@ def train(
             n_examples_seen += img.shape[0]
             if args.track:
                 wandb.log({"loss": loss.item()}, step=n_examples_seen)
-                if time.time() - t_last > args.seconds_between_image_logs:
+                if time.time() - t_last > args.seconds_between_image_logs or i == len(progress_bar) - 1:
                     t_last = time.time()
                     with t.inference_mode():
                         reconstructed = reconstruct(noised, noise, num_steps, schedule)
                         images = log_images(img, noised, noise, noise_pred, reconstructed, num_images=args.n_images_per_log)
+                        # Removing the code to log samples during training because it's too slow
+                        # if args.log_samples:
+                        #     samples = denormalize_img(sample(model, 6)).cpu()
+                        #     if samples.ndim == 3: samples = samples.unsqueeze(1)
+                        #     samples = rearrange(samples, "(b1 b2) c h w -> (b1 h) (b2 w) c", b1=2).squeeze()
+                        #     images.append(wandb.Image(samples, caption="Samples generated by model"))
                         wandb.log({"images": images}, step=n_examples_seen)
 
         if testset is not None:
             total_loss = 0
-            for (img,) in testloader:
+            for (img, *labels) in testloader:
                 img = img.to(device)
                 num_steps, noise, noised = noise_img(img, schedule)
                 with t.inference_mode():
@@ -448,6 +510,18 @@ def train(
                 wandb.log({"test_loss": total_loss/len(testloader)}, step=n_examples_seen)
             else:
                 print(f"Test loss: {total_loss/len(testloader):.3f}")
+
+        # Logging generated samples at the end of each epoch
+        if args.print_samples_at_epoch_end:
+            with t.inference_mode():
+                model.eval()
+                samples = sample(model, 6)
+                samples_denormalized = denormalize_img(samples).cpu()
+                plot_img_grid(samples_denormalized, title="Sample denoised images", cols=3)
+                samples = sample(model, 1, return_all_steps=True)[::5, 0, :]
+                samples_denormalized = denormalize_img(samples).cpu()
+                plot_img_slideshow(samples_denormalized, title="Sample denoised image slideshow")
+                model.train()
     
     if args.track:
         wandb.save("./wandb/gradients.h5")
@@ -458,7 +532,7 @@ def train(
 # %%
 
 if MAIN:
-    args = DiffusionArgs(epochs=2) # This shouldn't take long to train
+    args = DiffusionArgs(epochs=10, print_samples_at_epoch_end=False) # This shouldn't take long to train
     model_config = TinyDiffuserConfig(args.max_steps)
     model = TinyDiffuser(model_config).to(device).train()
     trainset = TensorDataset(normalize_img(gradient_images(args.n_images, args.image_shape)))
@@ -467,54 +541,6 @@ if MAIN:
     
 # %%
 
-def sample(model, n_samples: int, return_all_steps: bool = False) -> t.Tensor:
-    """
-    Sample, following Algorithm 2 in the DDPM paper
-
-    model: The trained noise-predictor
-    n_samples: The number of samples to generate
-    return_all_steps: if true, return a list of the reconstructed tensors generated at each step, rather than just the final reconstructed image tensor.
-
-    out: shape (B, C, H, W), the denoised images
-            or (T, B, C, H, W), if return_all_steps=True (where [i,:,:,:,:]th element is result of (i+1) steps of sampling)
-    """
-    schedule = model.noise_schedule
-    print(schedule)
-    assert schedule is not None
-    
-    # Creating list of arrays of shape (max_steps, B, C, H, W), to store all the results
-    T = len(schedule)
-    out = t.zeros(T, n_samples, *model.img_shape)
-    model.eval()
-
-    # Algorithm:
-    # STEP (1)
-    x = t.randn(size=(n_samples, *model.img_shape)).to(device)
-    # STEP (2)
-    for t_ in tqdm(range(T, 0, -1)):
-        # STEP (3)
-        z = t.randn_like(x) if t_ > 1 else 0
-        # STEP (4)
-        alpha = schedule.alpha(t_-1)
-        alpha_bar = schedule.alpha_bar(t_-1)
-        beta = schedule.beta(t_-1)
-        sigma = beta ** 0.5
-        # sigma=0 works better here
-        t_full = t.full((n_samples,), fill_value=t_, device=schedule.device)
-        eps = model(x, t_full)
-        sf_1 = 1 / alpha.sqrt()
-        sf_2 = (1 - alpha) / ((1 - alpha_bar).sqrt())
-        x = sf_1 * (x - sf_2 * eps) + sigma * z
-        out[-t_] = x
-        # STEP (5)
-
-    # STEP (6)
-    if return_all_steps:
-        return out
-    else:
-        return out[-1]
-
-
 if MAIN:
     print("Generating multiple images")
     assert isinstance(model, DiffusionModel)
@@ -522,8 +548,6 @@ if MAIN:
         samples = sample(model, 6)
         samples_denormalized = denormalize_img(samples).cpu()
     plot_img_grid(samples_denormalized, title="Sample denoised images", cols=3)
-    # for s in samples:
-    #     plot_img(denormalize_img(s).cpu())
 if MAIN:
     print("Printing sequential denoising")
     assert isinstance(model, DiffusionModel)
@@ -537,31 +561,6 @@ if MAIN:
 # ===============================================================
 # =========================== PART 3 ============================
 # ===============================================================
-
-# %%
-
-def get_fashion_mnist(train_transform, test_transform) -> Tuple[TensorDataset, TensorDataset]:
-    """Return MNIST data using the provided Tensor class."""
-    mnist_train = datasets.FashionMNIST("../data", train=True, download=True)
-    mnist_test = datasets.FashionMNIST("../data", train=False)
-    print("Preprocessing data...")
-    train_tensors = TensorDataset(
-        t.stack([train_transform(img) for (img, label) in tqdm(mnist_train, desc="Training data")])
-    )
-    test_tensors = TensorDataset(t.stack([test_transform(img) for (img, label) in tqdm(mnist_test, desc="Test data")]))
-    return (train_tensors, test_tensors)
-
-
-if MAIN:
-    train_transform = Compose([ToTensor(), RandomHorizontalFlip(), Lambda(lambda t: t * 2 - 1)])
-    data_folder = Path("data/w3d4")
-    data_folder.mkdir(exist_ok=True, parents=True)
-    DATASET_FILENAME = data_folder / "generative_models_dataset_fashion.pt"
-    if DATASET_FILENAME.exists():
-        (train_dataset, test_dataset) = t.load(str(DATASET_FILENAME))
-    else:
-        (train_dataset, test_dataset) = get_fashion_mnist(train_transform, train_transform)
-        t.save((train_dataset, test_dataset), str(DATASET_FILENAME))
 
 # %%
 
@@ -871,13 +870,17 @@ class UpBlock(nn.Module):
             self.upsample = Identity()
 
     def forward(self, x: t.Tensor, step_emb: t.Tensor, skip: t.Tensor) -> t.Tensor:
-        x = t.concat([skip, x], dim=1)
+        x = t.concat([x, skip], dim=1)
         x = self.resblock1(x, step_emb)
         x = self.resblock2(x, step_emb)
         x = self.attn(x)
         if isinstance(self.upsample, ConvTranspose2d):
             x = self.upsample(x)
         return x
+
+if MAIN:
+    w5d3_tests.test_upblock(UpBlock, upsample=True)
+    w5d3_tests.test_upblock(UpBlock, upsample=False)
 
 # %%
 
@@ -899,14 +902,13 @@ if MAIN:
 
 # %%
 
-
-@dataclass
+@dataclass(frozen=True)
 class UnetConfig():
     image_shape: Tuple[int, ...] = (1, 28, 28)
     channels: int = 128
     dim_mults: Tuple[int, ...] = (1, 2, 4, 8)
     groups: int = 4
-    max_steps: int = 1000
+    max_steps: int = 600
 
 class Unet(DiffusionModel):
     def __init__(self, config: UnetConfig):
@@ -951,7 +953,7 @@ class Unet(DiffusionModel):
             self.add_module(f"UpBlock{i}", UpBlock(channels_in, channels_out, time_emb_dim, self.groups, upsample))
         
         self.time_emb_block = Sequential(*[
-            PositionalEncoding(1000, self.max_steps),
+            PositionalEncoding(self.max_steps, self.max_steps),
             Linear(self.max_steps, time_emb_dim),
             GELU(),
             Linear(time_emb_dim, time_emb_dim)
@@ -987,9 +989,6 @@ class Unet(DiffusionModel):
         x = self.last_conv(x)
         return x
 
-
-import importlib
-importlib.reload(w5d3_tests)
 if MAIN:
     w5d3_tests.test_unet(Unet)
 
@@ -1032,12 +1031,15 @@ if MAIN:
 # %%
 
 if MAIN:
-    args = DiffusionArgs()
-
-    model_config = UnetConfig()
-    model_config.dim_mults = (1, 2, 4)
-    model_config.max_steps = 200
-    model_config.channels = 28
+    model_config = UnetConfig(
+        channels = 28,
+        dim_mults = (1, 2, 4), # Using smaller channels and dim_mults than default
+    )
+    args = DiffusionArgs(
+        epochs = 3,
+        image_shape = model_config.image_shape, 
+        max_steps = model_config.max_steps,
+    )
     model = Unet(model_config)
 
     batch_size_mini = 8
@@ -1053,28 +1055,43 @@ if MAIN:
 
 # %%
 
-def plot_img_grid_fashionMNIST(imgs: t.Tensor, cols: int, title: Optional[str] = None) -> None:
-    imgs = (255 * imgs).to(t.uint8)
-    fig = px.imshow(imgs, facet_col=0, facet_col_wrap=cols, title=title, color_continuous_scale="gray")
-    for annotation in fig.layout.annotations: annotation["text"] = ""
-    fig.show()
+# MNIST digits
 
-def plot_img_slideshow_fashionMNIST(imgs: t.Tensor, title: Optional[str] = None) -> None:
-    imgs = (255 * imgs).to(t.uint8)
-    fig = px.imshow(imgs, animation_frame=0, title=title, color_continuous_scale="gray")
-    fig.show()
+if MAIN:
+    model_config = UnetConfig(
+        channels = 28,
+        dim_mults = (1, 2, 4), # Using smaller channels and dim_mults than default
+    )
+    args = DiffusionArgs(
+        epochs = 3,
+        image_shape = model_config.image_shape, 
+        max_steps = model_config.max_steps,
+    )
+    model = Unet(model_config)
+    
+    model = Unet(model_config).to(device)
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,))
+    ])
+    trainset = datasets.MNIST(root="./data/mnist/", train=True, transform=transform, download=True)
+    testset = datasets.MNIST(root="./data/mnist/", train=False, transform=transform, download=True)
+    model = train(model, args, trainset, testset)
+
+# %%
 
 if MAIN:
     print("Generating multiple images")
     assert isinstance(model, DiffusionModel)
     with t.inference_mode():
         samples = sample(model, 6)
-        samples = denormalize_img(samples).cpu().squeeze()
-    plot_img_grid_fashionMNIST(samples, cols=3)
-
-if MAIN:
+        samples_denormalized = denormalize_img(samples).cpu()
+    plot_img_grid(samples_denormalized, title="Sample denoised images", cols=3)
     print("Printing sequential denoising")
+    assert isinstance(model, DiffusionModel)
     with t.inference_mode():
-        samples = sample(model, 1, return_all_steps=True).squeeze()
-        samples = denormalize_img(samples).cpu()[::5]
-    plot_img_slideshow_fashionMNIST(samples)
+        samples = sample(model, 1, return_all_steps=True)[::5, 0, :]
+        samples_denormalized = denormalize_img(samples).cpu()
+    plot_img_slideshow(samples_denormalized, title="Sample denoised image slideshow")
+
+# %%
