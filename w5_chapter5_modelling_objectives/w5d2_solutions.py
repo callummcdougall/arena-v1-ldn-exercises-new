@@ -9,10 +9,13 @@ from tqdm import tqdm
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 import numpy as np
+from typing import Optional, Union, Callable, Tuple
 import plotly.express as px
 import torchinfo
 import time
+from dataclasses import dataclass
 import wandb
+from PIL import Image
 import pandas as pd
 
 MAIN = __name__ == "__main__"
@@ -41,9 +44,9 @@ if MAIN:
 
     loss_fn = nn.MSELoss()
 
-    print_output_interval = 10
+    # print_output_interval = 10
 
-    epochs = 10
+    # epochs = 10
 
 # %%
 # ============================================ Autoencoders ============================================
@@ -79,13 +82,9 @@ class Autoencoder(nn.Module):
 
 
 if MAIN:
-    latent_dim_size = 5
-    batch_size = 128
-
-    model = Autoencoder(latent_dim_size).to(device)
-
+    model = Autoencoder(latent_dim_size=5).to(device)
     optimizer = optim.Adam(model.parameters())
-    torchinfo.summary(model, input_data=trainset[0][0].unsqueeze(0))
+    print(torchinfo.summary(model, input_data=trainset[0][0].unsqueeze(0)))
 
 # %%
 
@@ -121,14 +120,9 @@ class AutoencoderLarge(nn.Module):
         return x
 
 if MAIN:
-    img_shape = (28, 28)
-    batch_size = 128
-
     model = AutoencoderLarge(latent_dim_size=5)
-
     optimizer = optim.Adam(model.parameters())
-
-    torchinfo.summary(model, input_data=trainset[0][0].unsqueeze(0))
+    print(torchinfo.summary(model, input_data=trainset[0][0].unsqueeze(0)))
 
 
 # %%
@@ -158,25 +152,46 @@ def show_images(model, data_to_plot, return_arr=False):
 
 # %%
 
-def train_autoencoder(model, optimizer, loss_fn, trainset, data_to_plot, epochs, batch_size, print_output_interval=15, use_wandb=True):
+@dataclass
+class AutoencoderArgs():
+    latent_dim_size: int = 5
+    use_large: bool = True
+    epochs: int = 3
+    loss_fn: Callable = nn.MSELoss()
+    img_size: int = 28
+    img_channels: int = 1
+    batch_size: int = 512
+    track: bool = True
+    cuda: bool = True
+    seconds_between_image_logs: int = 5
+    trainset = trainset
+    testset = testset
+    data_to_plot: t.Tensor = data_to_plot # Set of images to plot or log
+
+
+# def train_autoencoder(model, optimizer, loss_fn, trainset, data_to_plot, epochs, batch_size, print_output_interval=15, use_wandb=True):
+def train_autoencoder(args: AutoencoderArgs):
+
+    model = AutoencoderLarge(args.latent_dim_size) if args.use_large else Autoencoder(args.latent_dim_size)
+    model.to(device).train()
+    optimizer = t.optim.Adam(model.parameters())
 
     t_last = time.time()
     examples_seen = 0
 
-    model.to(device).train()
-    data_to_plot = data_to_plot.to(device)
+    data_to_plot = args.data_to_plot.to(device)
 
-    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
+    trainloader = DataLoader(args.trainset, batch_size=args.batch_size, shuffle=True)
 
-    if use_wandb:
+    if args.track:
         wandb.init()
-        wandb.watch(model, log="all", log_freq=15)
+        # wandb.watch(model, log="all", log_freq=15)
 
-    for epoch in range(epochs):
+    for epoch in range(args.epochs):
 
         progress_bar = tqdm(trainloader)
 
-        for img, label in progress_bar:
+        for i, (img, label) in enumerate(progress_bar): # Remember, label is not used here
 
             examples_seen += img.size(0)
 
@@ -192,16 +207,16 @@ def train_autoencoder(model, optimizer, loss_fn, trainset, data_to_plot, epochs,
 
             progress_bar.set_description(f"Epoch {epoch+1}, Loss = {loss.item():>10.3f}")
 
-            if use_wandb:
+            if args.track:
                 wandb.log({"loss": loss.item()}, step=examples_seen)
             
-            if time.time() - t_last > print_output_interval:
-                t_last += print_output_interval
+            if (time.time() - t_last > args.seconds_between_image_logs) or (epoch == args.epochs - 1 and i == len(trainloader) - 1):
+                t_last += args.seconds_between_image_logs
                 with t.inference_mode():
-                    if use_wandb:
+                    if args.track:
                         arr = show_images(model, data_to_plot, return_arr=True)
                         images = wandb.Image(arr, caption="Top: original, Bottom: reconstructed")
-                        wandb.log({"images": [images, images]}, step=examples_seen)
+                        wandb.log({"images": [images]}, step=examples_seen)
                     else:
                         show_images(model, data_to_plot, return_arr=False)
 
@@ -212,16 +227,19 @@ def train_autoencoder(model, optimizer, loss_fn, trainset, data_to_plot, epochs,
 
 # %%
 if MAIN:
-    model = train_autoencoder(model, optimizer, loss_fn, trainset, data_to_plot, epochs, batch_size, print_output_interval=10)
+    args = AutoencoderArgs()
+    args.latent_dim_size = 5
+    # model = train_autoencoder(args)
 
 # %%
 if MAIN:
-    # Choose number of interpolation points
+    # Choose number of interpolation points, and interpolation range
     n_points = 11
+    interpolation_range = (-10, 10)
 
     # Constructing latent dim data by making two of the dimensions vary independently between 0 and 1
-    latent_dim_data = t.zeros((n_points, n_points, latent_dim_size), device=device)
-    x = t.linspace(-1, 1, n_points)
+    latent_dim_data = t.zeros((n_points, n_points, args.latent_dim_size), device=device)
+    x = t.linspace(*interpolation_range, n_points)
     latent_dim_data[:, :, 0] = x.unsqueeze(0)
     latent_dim_data[:, :, 1] = x.unsqueeze(1)
     # Rearranging so we have a single batch dimension
@@ -250,7 +268,7 @@ if MAIN:
 
 # %%
 
-def make_scatter_plot(trainset, n_examples=1000):
+def make_scatter_plot(model, trainset, data_to_plot, n_examples=5000):
     trainloader = DataLoader(trainset, batch_size=64)
     df_list = []
     device = next(model.parameters()).device
@@ -264,12 +282,35 @@ def make_scatter_plot(trainset, n_examples=1000):
             })
         if (n_examples is not None) and (len(df_list) >= n_examples):
             break
-    df = pd.DataFrame(df_list)
-    fig = px.scatter(df, x="x0", y="x1", color="label")
+    df = pd.DataFrame(df_list).sort_values("label")
+    fig = px.scatter(df, x="x0", y="x1", color="label", template="ggplot2")
+    fig.update_layout(height=1000, width=1000)
+
+    output_on_data_to_plot = model.encoder(data_to_plot.to(device)).detach().cpu().numpy()
+    data_to_plot = (data_to_plot.numpy() * 0.3081) + 0.1307
+    data_to_plot = (255 * data_to_plot).astype(np.uint8).squeeze()
+    for i in range(10):
+        img = Image.fromarray(data_to_plot[i]).convert("L")
+        from IPython.display import display
+        x = output_on_data_to_plot[i][0]
+        y = output_on_data_to_plot[i][1]
+        fig.add_layout_image(
+            source=img,
+            xref="x",
+            yref="y",
+            x=x,
+            y=y,
+            xanchor="right",
+            yanchor="top",
+            sizex=2,
+            sizey=2,
+    )
+
     fig.show()
 
 if MAIN:
-    make_scatter_plot(trainset, n_examples=2000)
+    pass
+    # make_scatter_plot(model, trainset, data_to_plot)
     # Result: better than I expected, density is pretty uniform and most of the space is utilised, 
     # although this is only a cross section of 2 dimensions so is a small subset of total space
 
@@ -303,26 +344,26 @@ class VAE(nn.Module):
             nn.ReLU(),
             nn.ConvTranspose2d(16, 1, 4, stride=2, padding=1),
         )
+    def sample_latent_vector(self, x: t.Tensor) -> t.Tensor:
+        mu, logsigma = self.encoder(x)
+        sigma = t.exp(logsigma)
+        # z = t.randn(self.latent_dim_size).to(device)
+        z = mu + sigma * t.randn_like(mu)
+        return z
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         mu, logsigma = self.encoder(x)
         sigma = t.exp(logsigma)
         # z = t.randn(self.latent_dim_size).to(device)
-        z = t.randn_like(mu)
-        z = mu + sigma * z
+        z = mu + sigma * t.randn_like(mu)
         x_reconstructed = self.decoder(z)
         return x_reconstructed, mu, logsigma
 
 if MAIN:
-    batch_size = 128
-
     model = VAE(latent_dim_size=5).to(device).train()
-
     optimizer = optim.Adam(model.parameters(), weight_decay=1e-5)
-
     loss_fn = nn.MSELoss()
-
-    torchinfo.summary(model, input_data=trainset[0][0].unsqueeze(0).to(device))
+    print(torchinfo.summary(model, input_data=trainset[0][0].unsqueeze(0).to(device)))
 
 # %%
 
@@ -331,26 +372,36 @@ def plot_loss(loss_fns_dict):
     fig = px.line(df, template="simple_white")
     fig.show()
 
-def train_vae(model, optimizer, loss_fn, trainset, data_to_plot, epochs, batch_size, beta=0.1, print_output_interval=15):
+@dataclass
+class VAEArgs(AutoencoderArgs):
+    weight_decay: float = 1e-5
+    beta_kl: float = 0.1
 
+def train_vae(args: VAEArgs):
+
+    if args.track:
+        wandb.init(config=args.__dict__)
+        
     t_last = time.time()
-    loss_fns = {"reconstruction": [],"kl_div": []}
-    model.to(device).train()
-    data_to_plot = data_to_plot.to(device)
+    
+    model = VAE(args.latent_dim_size).to(device).train()
+    optimizer = t.optim.Adam(model.parameters(), weight_decay=args.weight_decay)
+    
+    trainloader = DataLoader(args.trainset, batch_size=args.batch_size, shuffle=True)
+    data_to_plot = args.data_to_plot.to(device)
 
-    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
-
-    for epoch in range(epochs):
+    examples_seen = 0
+    for epoch in range(args.epochs):
 
         progress_bar = tqdm(trainloader)
 
-        for img, label in progress_bar:
+        for i, (img, label) in enumerate(progress_bar):
 
             img = img.to(device)
             img_reconstructed, mu, logsigma = model(img)
 
             reconstruction_loss = loss_fn(img, img_reconstructed)
-            kl_div_loss = ( 0.5 * (mu ** 2 + t.exp(2 * logsigma) - 1) - logsigma ).mean() * beta
+            kl_div_loss = ( 0.5 * (mu ** 2 + t.exp(2 * logsigma) - 1) - logsigma ).mean() * args.beta_kl
 
             loss = reconstruction_loss + kl_div_loss
             loss.backward()
@@ -358,29 +409,53 @@ def train_vae(model, optimizer, loss_fn, trainset, data_to_plot, epochs, batch_s
             optimizer.step()
             optimizer.zero_grad()
 
-            progress_bar.set_description(f"Epoch {epoch+1}, reconstruction_loss = {reconstruction_loss.item():>10.3f}, kl_div_loss = {kl_div_loss.item():>10.3f}, mean={mu.mean():>10.3f}, std={t.exp(logsigma).mean():>10.3f}")
-            loss_fns["reconstruction"].append(reconstruction_loss.item())
-            loss_fns["kl_div"].append(kl_div_loss.item())
+            examples_seen += img.shape[0]
+            vars_to_log = dict(
+                reconstruction_loss = reconstruction_loss.item(),
+                kl_div_loss = kl_div_loss.item(),
+                mean = mu.mean(),
+                std = t.exp(logsigma).mean(),
+                total_loss = loss.item(),
+            )
+            if args.track:
+                wandb.log(vars_to_log, step=examples_seen)
 
-            if time.time() - t_last > print_output_interval:
-                t_last += print_output_interval
+
+            desc = ", ".join([f"Epoch {epoch+1}", *[f"{k} = {v:>7.3f}" for k, v in vars_to_log.items()]])
+            progress_bar.set_description(desc)
+
+            if (time.time() - t_last > args.seconds_between_image_logs) or (epoch == args.epochs - 1 and i == len(trainloader) - 1):
+                t_last += args.seconds_between_image_logs
                 with t.inference_mode():
-                    show_images(model, data_to_plot)
-                    plot_loss(loss_fns)
+                    if args.track:
+                        arr = show_images(model, data_to_plot, return_arr=True)
+                        images = wandb.Image(arr, caption="Top: original, Bottom: reconstructed")
+                        wandb.log({"images": [images]}, step=examples_seen)
+                    else:
+                        show_images(model, data_to_plot)
+    
+    if args.track:
+        wandb.finish()
     return model
 
+# %%
+
 if MAIN:
-    model = train_vae(model, optimizer, loss_fn, trainset, data_to_plot, epochs, batch_size, print_output_interval)
+    args = VAEArgs()
+    args.latent_dim_size = 10
+    args.epochs = 5
+    model = train_vae(args)
 
 # %%
 
 if MAIN:
     # Choose number of interpolation points
     n_points = 11
+    interpolation_range = (-1, 1)
 
     # Constructing latent dim data by making two of the dimensions vary independently between 0 and 1
-    latent_dim_data = t.zeros((n_points, n_points, latent_dim_size), device=device)
-    x = t.linspace(-1, 1, n_points)
+    latent_dim_data = t.zeros((n_points, n_points, args.latent_dim_size), device=device)
+    x = t.linspace(*interpolation_range, n_points)
     latent_dim_data[:, :, 4] = x.unsqueeze(0)
     latent_dim_data[:, :, 3] = x.unsqueeze(1)
     # Rearranging so we have a single batch dimension
@@ -400,3 +475,31 @@ if MAIN:
         yaxis=dict(title_text="x1", tickmode="array", tickvals=list(range(14, 14+28*n_points, 28)), ticktext=[f"{i:.2f}" for i in x])
     )
     fig.show()
+
+# %%
+
+def make_3d_scatter_plot(model, trainset, n_examples=5000):
+    trainloader = DataLoader(trainset, batch_size=64)
+    df_list = []
+    device = next(model.parameters()).device
+    for img, label in trainloader:
+        output = model.sample_latent_vector(img.to(device)).detach().cpu().numpy()
+        for label_single, output_single in zip(label, output):
+            df_list.append({
+                "x0": output_single[0],
+                "x1": output_single[1],
+                "x2": output_single[2],
+                "label": str(label_single.item()),
+            })
+        if (n_examples is not None) and (len(df_list) >= n_examples):
+            break
+    df = pd.DataFrame(df_list).sort_values("label")
+    # create 3d scatter plot
+    fig = px.scatter_3d(df, x="x0", y="x1", z="x2", color="label", template="ggplot2")
+    fig.update_layout(height=1000, width=1000)
+    fig.update_traces(marker_size = 4)
+    fig.show()
+
+if MAIN:
+    make_3d_scatter_plot(model, args.trainset)
+# %%

@@ -22,11 +22,16 @@ from fancy_einsum import einsum
 
 MAIN = __name__ == "__main__"
 
-from w0d2.solutions import Linear, conv2d, force_pair, IntOrPair
-from w0d3.solutions import Sequential
-from w2d2.solutions_own_transformer import GELU, PositionalEncoding
-from w4d1.solutions import ConvTranspose2d
-from w5d1 import utils
+import sys, os
+p = r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured"
+os.chdir(p)
+sys.path.append(p)
+
+from w0d2_chapter0_convolutions.solutions import Linear, conv2d, force_pair, IntOrPair
+from w0d3_chapter0_resnets.solutions import Sequential
+from w1d1_chapter1_transformer_reading.solutions import GELU, PositionalEncoding
+from w5d1_solutions import ConvTranspose2d
+import w5d3_tests
 
 device = t.device("cuda:0") if t.cuda.is_available() else t.device("cpu")
 
@@ -56,13 +61,17 @@ def gradient_images(n_images: int, img_size: Tuple[int, int, int]) -> t.Tensor:
 
 
 def plot_img(img: t.Tensor, title: Optional[str] = None) -> None:
-    img = rearrange(img, "c h w -> h w c")
+    """Plots a single image, with optional title.
+    """
+    img = rearrange(img, "c h w -> h w c").clip(0, 1)
     img = (255 * img).to(t.uint8)
     fig = px.imshow(img, title=title)
-    fig.update_layout(margin=dict(t=60, l=40, r=40, b=40))
+    fig.update_layout(margin=dict(t=70 if title else 40, l=40, r=40, b=40))
     fig.show()
 
 def plot_img_grid(imgs: t.Tensor, title: Optional[str] = None, cols: Optional[int] = None) -> None:
+    """Plots a grid of images, with optional title.
+    """
     b = imgs.shape[0]
     imgs = rearrange(imgs, "b c h w -> b h w c")
     imgs = (255 * imgs).to(t.uint8)
@@ -74,6 +83,8 @@ def plot_img_grid(imgs: t.Tensor, title: Optional[str] = None, cols: Optional[in
     fig.show()
 
 def plot_img_slideshow(imgs: t.Tensor, title: Optional[str] = None) -> None:
+    """Plots slideshow of images.
+    """
     imgs = rearrange(imgs, "b c h w -> b h w c")
     imgs = (255 * imgs).to(t.uint8)
     fig = px.imshow(imgs, animation_frame=0, title=title)
@@ -85,7 +96,7 @@ if MAIN:
     n_images = 5
     imgs = gradient_images(n_images, img_shape)
     for i in range(n_images):
-        plot_img(imgs[i])
+        plot_img(imgs[i], title=f"Gradient {i+1}/{n_images}")
 
 
 # %%
@@ -125,12 +136,12 @@ def q_forward_slow(x: t.Tensor, num_steps: int, betas: t.Tensor) -> t.Tensor:
     out: shape (channels, height, width)
     '''
     # zips have length equal to the minimum of the zipped elements
+    # so zipping makes sure we terminate after num_steps
     for step, beta in zip(range(num_steps), betas):
         x *= (1 - beta) ** 0.5
         x += (beta ** 0.5) * t.randn_like(x)
     
     return x
-
 
 if MAIN:
     noise_steps = [1, 5, 10, 20, 50, 100, 200]
@@ -148,9 +159,9 @@ def q_forward_fast(x: t.Tensor, num_steps: int, betas: t.Tensor) -> t.Tensor:
     '''Equivalent to Equation 2 but without a for loop.'''
     alphas = 1 - betas
     alpha_bar = t.prod(alphas)
-    xt = ((1 - betas[-1]) ** 0.5) * (betas[-1] ** 0.5) * t.rand_like(x)
+    noise = t.rand_like(x)
+    xt = t.sqrt(alpha_bar) * x + t.sqrt(1 - alpha_bar) * noise
     return xt
-
 
 if MAIN:
     x = normalize_img(gradient_images(1, (3, 16, 16))[0])
@@ -212,6 +223,9 @@ class NoiseSchedule(nn.Module):
 
     def __len__(self) -> int:
         return self.max_steps
+
+    def extra_repr(self) -> str:
+        return f"max_steps={self.max_steps}"
 
 # %%
 
@@ -285,9 +299,9 @@ class DiffusionModel(nn.Module, ABC):
 
 @dataclass(frozen=True)
 class TinyDiffuserConfig:
-    img_shape: Tuple[int, ...]
-    hidden_size: int
     max_steps: int
+    img_shape: Tuple[int, ...] = (3, 4, 5)
+    hidden_size: int = 128
 
 
 class TinyDiffuser(DiffusionModel):
@@ -340,6 +354,20 @@ if MAIN:
 
 # %%
 
+@dataclass
+class DiffusionArgs():
+    lr: float = 0.001
+    image_shape: tuple = (3, 4, 5)
+    epochs: int = 10
+    max_steps: int = 100
+    batch_size: int = 128
+    seconds_between_image_logs: int = 10
+    n_images_per_log: int = 3
+    n_images: int = 50000
+    n_eval_images: int = 1000
+    cuda: bool = True
+    track: bool = True
+
 def log_images(
     img: t.Tensor, noised: t.Tensor, noise: t.Tensor, noise_pred: t.Tensor, reconstructed: t.Tensor, num_images: int = 3
 ) -> List[wandb.Image]:
@@ -353,43 +381,43 @@ def log_images(
     images = [wandb.Image(i, caption=caption) for i in log_img[:num_images]]
     return images
 
-def train(
-    model: DiffusionModel, config_dict: Dict[str, Any], trainset: TensorDataset, testset: Optional[TensorDataset] = None
-) -> DiffusionModel:
 
-    wandb.init(project="diffusion_models", config=config_dict)
-    config = wandb.config
-    print(f"Training with config: {config}")
+def train(
+    model: DiffusionModel, 
+    args: DiffusionArgs, 
+    trainset: TensorDataset,
+    testset: Optional[TensorDataset] = None
+) -> DiffusionModel:
+    pass
 
     t_last = time.time()
+    if args.track:
+        wandb.init(project="diffusion_models", config=args.__dict__)
+        # wandb.watch(model, log="all", log_freq=15)
+        config = wandb.config
+        print(f"Training with config: {config}")
 
-    model.to(device).train()
-    # wandb.watch(model, log="all", log_freq=15)
+    device = t.device("cuda" if args.cuda and t.cuda.is_available() else "cpu")
     
-    optimizer = t.optim.Adam(model.parameters())
+    trainloader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True)
+    testloader = DataLoader(testset, batch_size=args.batch_size, shuffle=True)
 
-    schedule = NoiseSchedule(max_steps=200, device=device)
+    optimizer = t.optim.Adam(model.parameters(), lr=args.lr)
+
+    schedule = NoiseSchedule(args.max_steps, device=device)
     model.noise_schedule = schedule
 
-    trainloader = DataLoader(trainset, batch_size=config_dict["batch_size"], shuffle=True)
-    testloader = DataLoader(testset, batch_size=config_dict["batch_size"], shuffle=True)
-
     n_examples_seen = 0
-    n_steps = 0
-
-    for epoch in range(config_dict["epochs"]):
-
+    for epoch in range(args.epochs):
         progress_bar = tqdm(trainloader)
-
         for (img,) in progress_bar:
 
             img = img.to(device)
-            num_steps, noise, noised = noise_img(img, schedule, config_dict["max_steps"])
+            num_steps, noise, noised = noise_img(img, schedule, args.max_steps)
 
             noise_pred = model(noised, num_steps)
 
             loss = F.mse_loss(noise, noise_pred)
-
             loss.backward()
 
             optimizer.step()
@@ -398,53 +426,45 @@ def train(
             progress_bar.set_description(f"Epoch {epoch+1}, Loss = {loss.item():>10.3f}")
 
             n_examples_seen += img.shape[0]
-            n_steps += 1
-            wandb.log({"loss": loss.item()}, step=n_examples_seen)
-
-            if (n_steps + 1) % config_dict["img_log_interval"] == 0:
-                with t.inference_mode():
-                    reconstructed = reconstruct(noised, noise, num_steps, schedule)
-                    images = log_images(img, noised, noise, noise_pred, reconstructed, num_images=config_dict["n_images_to_log"])
-                    wandb.log({"images": images}, step=n_examples_seen)
+            if args.track:
+                wandb.log({"loss": loss.item()}, step=n_examples_seen)
+                if time.time() - t_last > args.seconds_between_image_logs:
+                    t_last = time.time()
+                    with t.inference_mode():
+                        reconstructed = reconstruct(noised, noise, num_steps, schedule)
+                        images = log_images(img, noised, noise, noise_pred, reconstructed, num_images=args.n_images_per_log)
+                        wandb.log({"images": images}, step=n_examples_seen)
 
         if testset is not None:
             total_loss = 0
-            for (img,) in tqdm(testloader, desc=f"Epoch {epoch+1} eval"):
+            for (img,) in testloader:
                 img = img.to(device)
                 num_steps, noise, noised = noise_img(img, schedule)
                 with t.inference_mode():
                     noise_pred = model(noised, num_steps)
                     loss = F.mse_loss(noise_pred, noise)
                 total_loss += loss.item()
-            wandb.log({"test_loss": total_loss/len(testloader)}, step=n_examples_seen)
+            if args.track:
+                wandb.log({"test_loss": total_loss/len(testloader)}, step=n_examples_seen)
+            else:
+                print(f"Test loss: {total_loss/len(testloader):.3f}")
     
-    wandb.save("./wandb/gradients.h5")
-    wandb.finish()
+    if args.track:
+        wandb.save("./wandb/gradients.h5")
+        wandb.finish()
 
-    return model    
+    return model
+
+# %%
 
 if MAIN:
-    config: Dict[str, Any] = dict(
-        lr=0.001,
-        image_shape=(3, 4, 5),
-        hidden_size=128,
-        epochs=20,
-        max_steps=100,
-        batch_size=128,
-        img_log_interval_seconds=10,
-        n_images_to_log=3,
-        n_images=50000,
-        n_eval_images=1000,
-        device=device,
-    )
-    images = normalize_img(gradient_images(config["n_images"], config["image_shape"]))
-    trainset = TensorDataset(images)
-    images = normalize_img(gradient_images(config["n_eval_images"], config["image_shape"]))
-    testset = TensorDataset(images)
-    model_config = TinyDiffuserConfig(config["image_shape"], config["hidden_size"], config["max_steps"])
-    model = TinyDiffuser(model_config).to(config["device"])
-    model = train(model, config, trainset, testset)
-
+    args = DiffusionArgs(epochs=2) # This shouldn't take long to train
+    model_config = TinyDiffuserConfig(args.max_steps)
+    model = TinyDiffuser(model_config).to(device).train()
+    trainset = TensorDataset(normalize_img(gradient_images(args.n_images, args.image_shape)))
+    testset = TensorDataset(normalize_img(gradient_images(args.n_eval_images, args.image_shape)))
+    model = train(model, args, trainset, testset)
+    
 # %%
 
 def sample(model, n_samples: int, return_all_steps: bool = False) -> t.Tensor:
@@ -459,6 +479,7 @@ def sample(model, n_samples: int, return_all_steps: bool = False) -> t.Tensor:
             or (T, B, C, H, W), if return_all_steps=True (where [i,:,:,:,:]th element is result of (i+1) steps of sampling)
     """
     schedule = model.noise_schedule
+    print(schedule)
     assert schedule is not None
     
     # Creating list of arrays of shape (max_steps, B, C, H, W), to store all the results
@@ -478,6 +499,7 @@ def sample(model, n_samples: int, return_all_steps: bool = False) -> t.Tensor:
         alpha_bar = schedule.alpha_bar(t_-1)
         beta = schedule.beta(t_-1)
         sigma = beta ** 0.5
+        # sigma=0 works better here
         t_full = t.full((n_samples,), fill_value=t_, device=schedule.device)
         eps = model(x, t_full)
         sf_1 = 1 / alpha.sqrt()
@@ -634,8 +656,8 @@ class GroupNorm(nn.Module):
         return x
 
 if MAIN:
-    utils.test_groupnorm(GroupNorm, affine=False)
-    utils.test_groupnorm(GroupNorm, affine=True)
+    w5d3_tests.test_groupnorm(GroupNorm, affine=False)
+    w5d3_tests.test_groupnorm(GroupNorm, affine=True)
 
 # %%
 
@@ -724,7 +746,7 @@ class SelfAttention(nn.Module):
 
 
 if MAIN:
-    utils.test_self_attention(SelfAttention)
+    w5d3_tests.test_self_attention(SelfAttention)
 
 # %%
 
@@ -738,7 +760,7 @@ class AttentionBlock(nn.Module):
         return x + self.attn(self.groupnorm(x))
 
 if MAIN:
-    utils.test_attention_block(SelfAttention)
+    w5d3_tests.test_attention_block(SelfAttention)
 
 # %%
 
@@ -797,7 +819,7 @@ class ResidualBlock(nn.Module):
         return x_skip + x
 
 if MAIN:
-    utils.test_residual_block(ResidualBlock)
+    w5d3_tests.test_residual_block(ResidualBlock)
 
 # %%
 
@@ -831,8 +853,8 @@ class DownBlock(nn.Module):
         return self.downsample(x), x
 
 if MAIN:
-    utils.test_downblock(DownBlock, downsample=True)
-    utils.test_downblock(DownBlock, downsample=False)
+    w5d3_tests.test_downblock(DownBlock, downsample=True)
+    w5d3_tests.test_downblock(DownBlock, downsample=False)
 
 # %%
 
@@ -873,19 +895,21 @@ class MidBlock(nn.Module):
         return x
 
 if MAIN:
-    utils.test_midblock(MidBlock)
+    w5d3_tests.test_midblock(MidBlock)
 
 # %%
 
+
+@dataclass
+class UnetConfig():
+    image_shape: Tuple[int, ...] = (1, 28, 28)
+    channels: int = 128
+    dim_mults: Tuple[int, ...] = (1, 2, 4, 8)
+    groups: int = 4
+    max_steps: int = 1000
+
 class Unet(DiffusionModel):
-    def __init__(
-        self,
-        image_shape: Tuple[int, int, int],
-        channels: int = 128,
-        dim_mults: Tuple[int, ...] = (1, 2, 4, 8),
-        groups: int = 4,
-        max_steps: int = 1000,
-    ):
+    def __init__(self, config: UnetConfig):
         """
         image_shape: the input and output image shape, a tuple of (C, H, W)
         channels: the number of channels after the first convolution.
@@ -893,48 +917,48 @@ class Unet(DiffusionModel):
         groups: number of groups in the group normalization of each ResnetBlock (doesn't apply to attention block)
         max_steps: the max number of (de)noising steps. We also use this value as the sinusoidal positional embedding dimension (although in general these do not need to be related).
         """
-        self.noise_schedule = None
-        self.img_shape = image_shape
-        self.channels = channels
-        self.dim_mults = dim_mults
-        self.groups = groups
-        self.max_steps = max_steps
-
         super().__init__()
 
-        self.n_downblocks = len(dim_mults)
-        self.n_upblocks = len(dim_mults) - 1
+        self.image_shape = config.image_shape
+        self.channels = config.channels
+        self.dim_mults = config.dim_mults
+        self.groups = config.groups
+        self.max_steps = config.max_steps
+        self.noise_schedule = None
 
-        C, H, W = image_shape
-        time_emb_dim = 4 * channels
-        channels_list = tuple([channels * d for d in dim_mults])
+        self.n_downblocks = len(self.dim_mults)
+        self.n_upblocks = len(self.dim_mults) - 1
 
-        self.first_conv = Conv2d(C, channels, 7, 1, 3)
+        C, H, W = self.image_shape
+        time_emb_dim = 4 * self.channels
+        channels_list = tuple([self.channels * d for d in self.dim_mults])
+
+        self.first_conv = Conv2d(C, self.channels, 7, 1, 3)
         
-        downblock_in_channels = (channels,) + channels_list[:-1]
+        downblock_in_channels = (self.channels,) + channels_list[:-1]
         downblock_out_channels = channels_list
         is_downsample = [True for _ in range(self.n_downblocks - 1)] + [False]
         for i, (channels_in, channels_out, downsample) in enumerate(zip(downblock_in_channels, downblock_out_channels, is_downsample)):
-            downblock = DownBlock(channels_in, channels_out, time_emb_dim, groups, downsample)
+            downblock = DownBlock(channels_in, channels_out, time_emb_dim, self.groups, downsample)
             self.add_module(f"DownBlock{i}", downblock)
         
-        self.mid = MidBlock(channels_out, time_emb_dim, groups)
+        self.mid = MidBlock(channels_out, time_emb_dim, self.groups)
 
         upblock_in_channels = channels_list[-1:0:-1]
         upblock_out_channels = channels_list[-2::-1]
         is_upsample = [True for _ in range(self.n_upblocks)]
         for i, (channels_in, channels_out, upsample) in enumerate(zip(upblock_in_channels, upblock_out_channels, is_upsample)):
-            self.add_module(f"UpBlock{i}", UpBlock(channels_in, channels_out, time_emb_dim, groups, upsample))
+            self.add_module(f"UpBlock{i}", UpBlock(channels_in, channels_out, time_emb_dim, self.groups, upsample))
         
         self.time_emb_block = Sequential(*[
-            PositionalEncoding(1000, max_steps),
-            Linear(max_steps, time_emb_dim),
+            PositionalEncoding(1000, self.max_steps),
+            Linear(self.max_steps, time_emb_dim),
             GELU(),
             Linear(time_emb_dim, time_emb_dim)
         ])
 
-        self.resblock = ResidualBlock(channels, channels, time_emb_dim, groups)
-        self.last_conv = Conv2d(channels, C, 1)
+        self.resblock = ResidualBlock(self.channels, self.channels, time_emb_dim, self.groups)
+        self.last_conv = Conv2d(self.channels, C, 1)
 
     def forward(self, x: t.Tensor, num_steps: t.Tensor) -> t.Tensor:
         """
@@ -963,8 +987,11 @@ class Unet(DiffusionModel):
         x = self.last_conv(x)
         return x
 
+
+import importlib
+importlib.reload(w5d3_tests)
 if MAIN:
-    utils.test_unet(Unet)
+    w5d3_tests.test_unet(Unet)
 
 
 # %%
@@ -1005,37 +1032,24 @@ if MAIN:
 # %%
 
 if MAIN:
-    config_dict: Dict[str, Any] = dict(
-        model_channels=28,
-        model_dim_mults=(1, 2, 4),
-        image_shape=(1, 28, 28),
-        max_steps=200,
-        epochs=10,
-        lr=0.001,
-        batch_size=256,
-        img_log_interval=200,
-        n_images_to_log=3,
-        device=device,
-    )
-    model = Unet(
-        image_shape=config_dict["image_shape"], 
-        channels=config_dict["model_channels"],
-        dim_mults=config_dict["model_dim_mults"],
-        max_steps=config_dict["max_steps"]
-    )
-    model.noise_schedule = NoiseSchedule(
-        config_dict["max_steps"], config_dict["device"]
-    )
+    args = DiffusionArgs()
+
+    model_config = UnetConfig()
+    model_config.dim_mults = (1, 2, 4)
+    model_config.max_steps = 200
+    model_config.channels = 28
+    model = Unet(model_config)
+
     batch_size_mini = 8
     x = trainset.tensors[0][:batch_size_mini]
-    num_steps = t.randint(low=0, high=config_dict["max_steps"], size=(batch_size_mini,))
+    num_steps = t.randint(low=0, high=args.max_steps, size=(batch_size_mini,))
     summary = torchinfo.summary(model, input_data=(x, num_steps))
     print(summary)
 
 # %%
 
 if MAIN:
-    model = train(model, config_dict, trainset, testset)
+    model = train(model, args, trainset, testset)
 
 # %%
 

@@ -1,7 +1,7 @@
 import torch as t
 from torch import nn
 
-import w5d1_solutions
+import w5d3_solutions
 
 @t.inference_mode()
 def test_groupnorm(GroupNorm, affine: bool):
@@ -38,16 +38,16 @@ def test_self_attention(SelfAttention):
     assert out.shape == img.shape
     print("Shape test in `test_self_attention` passed.")
     print("Testing values of output...")
-    sa_solns = w5d1_solutions.SelfAttention(channels=channels, num_heads=4)
+    sa_solns = w5d3_solutions.SelfAttention(channels=channels, num_heads=4)
     try:
-        sa.W_QKV = sa_solns.in_proj
-        sa.W_O = sa_solns.out_proj
+        sa.W_QKV = sa_solns.W_QKV
+        sa.W_O = sa_solns.W_O
         out_actual = sa(img)
         out_expected = sa_solns(img)
         t.testing.assert_close(out_actual, out_expected)
         print("All tests in `test_self_attention` passed.")
     except:
-        print("Warning: you need linear layers called `W_QKV` and `W_O` with biases, otherwise the values test can't be performed.")
+        print("Didn't find any linear layers called `W_QKV` and `W_O` with biases. Please change your linear layers to have these names, otherwise the values test can't be performed.")
 
 @t.inference_mode()
 def test_attention_block(AttentionBlock):
@@ -71,7 +71,7 @@ def test_residual_block(ResidualBlock):
     assert out.shape == (1, out_channels, 32, 32)
     print("Shape test in `test_residual_block` passed.")
     print("Testing parameter count...")
-    rb_soln = w5d1_solutions.ResidualBlock(in_channels, out_channels, step_dim, groups)
+    rb_soln = w5d3_solutions.ResidualBlock(in_channels, out_channels, step_dim, groups)
     param_list = sorted([tuple(p.shape) for p in rb.parameters()], key=lambda x: -t.prod(t.tensor(x)).item())
     param_list_expected = sorted([tuple(p.shape) for p in rb_soln.parameters()], key=lambda x: -t.prod(t.tensor(x)).item())
     if param_list == param_list_expected:
@@ -103,7 +103,7 @@ def test_downblock(DownBlock, downsample: bool):
         assert out.shape == (1, out_channels, 32, 32)
     print("Shape test in `test_downblock` passed.")
     print("Testing parameter count...")
-    db_soln = w5d1_solutions.DownBlock(in_channels, out_channels, time_emb_dim, groups, downsample)
+    db_soln = w5d3_solutions.DownBlock(in_channels, out_channels, time_emb_dim, groups, downsample)
     param_count = sum([p.numel() for p in db.parameters() if p.ndim > 1])
     param_count_expected = sum([p.numel() for p in db_soln.parameters() if p.ndim > 1])
     error_msg = f"Total number of (non-bias) parameters don't match: you have {param_count}, expected number is {param_count_expected}."
@@ -125,7 +125,7 @@ def test_midblock(MidBlock):
     assert out.shape == (1, mid_channels, 32, 32)
     print("Shape test in `test_midblock` passed.")
     print("Testing parameter count...")
-    mid_soln = w5d1_solutions.MidBlock(mid_channels, time_emb_dim, groups)
+    mid_soln = w5d3_solutions.MidBlock(mid_channels, time_emb_dim, groups)
     param_count = sum([p.numel() for p in mid.parameters() if p.ndim > 1])
     param_count_expected = sum([p.numel() for p in mid_soln.parameters() if p.ndim > 1])
     assert param_count == param_count_expected, f"Total number of (non-bias) parameters don't match: you have {param_count}, expected number is {param_count_expected}."
@@ -149,7 +149,7 @@ def test_upblock(UpBlock, upsample):
         assert out.shape == (1, in_channels, 16, 16)
     print("Shape test in `test_upblock` passed.")
     print("Testing parameter count...")
-    up_soln = w5d1_solutions.UpBlock(in_channels, out_channels, time_emb_dim, groups, upsample)
+    up_soln = w5d3_solutions.UpBlock(in_channels, out_channels, time_emb_dim, groups, upsample)
     param_count = sum([p.numel() for p in up.parameters() if p.ndim > 1])
     param_count_expected = sum([p.numel() for p in up_soln.parameters() if p.ndim > 1])
     error_msg = f"Total number of (non-bias) parameters don't match: you have {param_count}, expected number is {param_count_expected}."
@@ -165,11 +165,12 @@ def test_unet(Unet):
     image_size = 28
     channels = 8
     batch_size = 8
-    model = Unet(
+    config = w5d3_solutions.UnetConfig(
         image_shape=(8, 28, 28),
         channels=channels,
         dim_mults=(1, 2, 4),
     )
+    model = Unet(config)
     x = t.randn((batch_size, channels, image_size, image_size))
     num_steps = t.randint(0, 1000, (batch_size,))
     out = model(x, num_steps)

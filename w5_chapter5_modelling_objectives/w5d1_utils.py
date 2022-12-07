@@ -27,11 +27,11 @@ def show_images(data, rows=3, cols=5):
         img = rearrange(img, "(b1 b2) c h w -> (b1 h) (b2 w) c", b1=rows)
     else:
         img = rearrange(img, "(b1 b2) h w -> (b1 h) (b2 w)", b1=rows)
-    (px.imshow(img, color_continuous_scale="greys_r")
+    fig = (px.imshow(img, color_continuous_scale="greys_r")
      .update_layout(margin=dict.fromkeys("tblr", 20), coloraxis_showscale=False)
      .update_xaxes(showticklabels=False)
-     .update_yaxes(showticklabels=False)
-    ).show()
+     .update_yaxes(showticklabels=False))
+    fig.show()
 
 def print_param_count(*models, display_df=True, use_state_dict=False):
     """
