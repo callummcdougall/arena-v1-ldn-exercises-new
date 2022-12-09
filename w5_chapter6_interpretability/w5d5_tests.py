@@ -1,7 +1,7 @@
 import torch as t
+import w5d5_solutions
 
 def test_get_inputs(get_inputs, model, data):
-    import w5d5_solutions
 
     module = model.layers[1].linear2
 
@@ -12,7 +12,6 @@ def test_get_inputs(get_inputs, model, data):
     print("All tests in `test_get_inputs` passed.")
 
 def test_get_outputs(get_outputs, model, data):
-    import w5d5_solutions
 
     module = model.layers[1].linear2
 
@@ -23,7 +22,6 @@ def test_get_outputs(get_outputs, model, data):
     print("All tests in `test_get_outputs` passed.")
 
 def test_get_out_by_head(get_out_by_head, model, data):
-    import w5d5_solutions
 
     layer = 2
 
@@ -34,7 +32,6 @@ def test_get_out_by_head(get_out_by_head, model, data):
     print("All tests in `test_get_out_by_head` passed.")
 
 def test_get_out_by_component(get_out_by_components, model, data):
-    import w5d5_solutions
 
     expected = w5d5_solutions.get_out_by_components(model, data)
     actual = get_out_by_components(model, data)
@@ -43,7 +40,6 @@ def test_get_out_by_component(get_out_by_components, model, data):
     print("All tests in `test_get_out_by_component` passed.")
 
 def test_final_ln_fit(model, data, get_ln_fit):
-    import w5d5_solutions
 
     expected, exp_r2 = w5d5_solutions.get_ln_fit(model, data, model.norm, 0)
     actual, act_r2 = get_ln_fit(model, data, model.norm, 0)
@@ -54,7 +50,6 @@ def test_final_ln_fit(model, data, get_ln_fit):
     print("All tests in `test_final_ln_fit` passed.")
 
 def test_pre_final_ln_dir(model, data, get_pre_final_ln_dir):
-    import w5d5_solutions
 
     expected = w5d5_solutions.get_pre_final_ln_dir(model, data)
     actual = get_pre_final_ln_dir(model, data)
@@ -63,7 +58,6 @@ def test_pre_final_ln_dir(model, data, get_pre_final_ln_dir):
     print("All tests in `test_pre_final_ln_dir` passed.")
 
 def test_get_WV(model, get_WV):
-    import w5d5_solutions
 
     indices = [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]
 
@@ -74,7 +68,6 @@ def test_get_WV(model, get_WV):
     print("All tests in `test_get_WV` passed.")
 
 def test_get_WO(model, get_WO):
-    import w5d5_solutions
 
     indices = [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]
 
@@ -85,7 +78,6 @@ def test_get_WO(model, get_WO):
     print("All tests in `test_get_WO` passed.")
 
 def test_get_pre_20_dir(model, data, get_pre_20_dir):
-    import w5d5_solutions
 
     expected = w5d5_solutions.get_pre_20_dir(model, data)
     actual = get_pre_20_dir(model, data)
@@ -94,7 +86,6 @@ def test_get_pre_20_dir(model, data, get_pre_20_dir):
     print("All tests in `test_get_pre_20_dir` passed.")
 
 def embedding_test(model, tokenizer, embedding_fn):
-    import w5d5_solutions
 
     open_encoding = w5d5_solutions.embedding(model, tokenizer, "(")
     closed_encoding = w5d5_solutions.embedding(model, tokenizer, ")")
@@ -104,7 +95,6 @@ def embedding_test(model, tokenizer, embedding_fn):
     print("All tests in `embedding_test` passed.")
 
 def qk_test(model, their_get_q_and_k):
-    import w5d5_solutions
 
     indices = [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]
 
@@ -116,7 +106,6 @@ def qk_test(model, their_get_q_and_k):
     print("All tests in `qk_test` passed.")
 
 def test_qk_calc_termwise(model, tokenizer, their_get_q_and_k):
-    import w5d5_solutions
 
     embedding = model.encoder(tokenizer.tokenize(["()()()()"]).to(w5d5_solutions.DEVICE)).squeeze()
     expected = w5d5_solutions.qk_calc_termwise(model, 0, 0, embedding, embedding)

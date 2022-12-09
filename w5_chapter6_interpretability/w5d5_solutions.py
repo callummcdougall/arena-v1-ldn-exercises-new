@@ -32,42 +32,16 @@ DEVICE = t.device("cpu")
 
 # %%
 
-if MAIN:
-    model = ParenTransformer(ntoken=5, nclasses=2, d_model=56, nhead=2, d_hid=56, nlayers=3).to(DEVICE)
-    state_dict = t.load("w5d5_balanced_brackets_state_dict.pt")
-    model.to(DEVICE)
-    model.load_simple_transformer_state_dict(state_dict)
-    model.eval()
-    tokenizer = SimpleTokenizer("()")
-    with open("w5d5_brackets_data.json") as f:
-        data_tuples: List[Tuple[str, bool]] = json.load(f)
-        print(f"loaded {len(data_tuples)} examples")
-    assert isinstance(data_tuples, list)
-
-# %%
-
-# for me!
-
-# def plot_elevation(paren_string, title):
-#     """Plot the elevation of a paren string"""
-#     elevation = 0
-#     elevations = []
-#     for c in paren_string:
-#         if c == "(":
-#             elevation += 1
-#         else:
-#             elevation -= 1
-#         elevations.append(elevation)
-#     elevations = [e - elevations[-1] for e in elevations]
-#     fig = px.line(x=list(range(len(paren_string))), y=elevations, template="simple_white", title=title)
-#     fig.add_hline(y=0, line_dash="dash", line_color="red", line_width=5)
-#     fig.show()
-
-# plot_elevation("((()()()()))", "Balanced brackets")
-
-# plot_elevation("(()()()(()(())()", "Unbalanced brackets '(()()()(()(())()': `elevation[0] != 0`")
-
-# plot_elevation("()(()))())", "Unbalanced brackets: `any(elevation < 0)`")
+model = ParenTransformer(ntoken=5, nclasses=2, d_model=56, nhead=2, d_hid=56, nlayers=3).to(DEVICE)
+state_dict = t.load("w5d5_balanced_brackets_state_dict.pt")
+model.to(DEVICE)
+model.load_simple_transformer_state_dict(state_dict)
+model.eval()
+tokenizer = SimpleTokenizer("()")
+with open("w5d5_brackets_data.json") as f:
+    data_tuples: List[Tuple[str, bool]] = json.load(f)
+    print(f"loaded {len(data_tuples)} examples")
+assert isinstance(data_tuples, list)
 
 # %%
 
@@ -105,12 +79,12 @@ class DataSet:
         return cls([(s, b) for (s, b) in data_tuples if s[0] == start_char])
 
 
-if MAIN:
-    N_SAMPLES = 5000
-    data_tuples = data_tuples[:N_SAMPLES]
-    data = DataSet(data_tuples)
-    "TODO: YOUR CODE HERE"
+N_SAMPLES = 5000
+data_tuples = data_tuples[:N_SAMPLES]
+data = DataSet(data_tuples)
+data_mini = data[:500]
 
+if MAIN:
     bracket_lengths = [len(s[0]) for s in data]
     fig = px.histogram(
         title="Length of bracket strings in dataset",
@@ -338,8 +312,6 @@ def get_out_by_components(model: ParenTransformer, data: DataSet) -> t.Tensor:
         out.extend([head_outputs[layer][:, 0], head_outputs[layer][:, 1], mlp_outputs[layer]])
 
     return t.stack(out, dim=0)
-
-data_mini = data[:500]
 
 # if MAIN:
 #     w5d5_tests.test_get_out_by_component(get_out_by_components, model, data_mini)
