@@ -52,40 +52,27 @@ class MultiheadAttention(nn.Module):
 
         Return: shape (batch, seq, hidden_size)
         """
-        Q = self.W_Q(x)
-        K = self.W_K(x)
-        V = self.W_V(x)
-
-        attention_values = self.multihead_attention(Q, K, V, additive_attention_mask, num_heads=self.num_heads)
-
-        output = self.W_O(attention_values)
-
-        return self.dropout(output)
-
-    # Now moving this function into a class method, so it can refer to the dropout layers
-    def multihead_attention(self, Q: t.Tensor, K: t.Tensor, V: t.Tensor, additive_attention_mask: Optional[t.Tensor], num_heads: int) -> t.Tensor:
-
-        q = rearrange(Q, "batch seq (nheads headsize) -> batch seq nheads headsize", nheads=num_heads)
-        k = rearrange(K, "batch seq (nheads headsize) -> batch seq nheads headsize", nheads=num_heads)
-        v = rearrange(V, "batch seq (nheads headsize) -> batch seq nheads headsize", nheads=num_heads)
-
-        batch, seq_len, nheads, headsize = q.shape
-        attention_scores = einsum("batch seqQ nheads headsize, batch seqK nheads headsize -> batch nheads seqQ seqK", q, k) / (headsize ** 0.5)
+        attention_scores = self.attention_pattern_pre_softmax(x)
         if additive_attention_mask is not None:
             attention_scores = attention_scores + additive_attention_mask
 
         attention_probabilities = attention_scores.softmax(dim=-1)
 
+        v = rearrange(self.W_V(x), "batch seq (nheads headsize) -> batch seq nheads headsize", nheads=self.num_heads)
         attention_values = einsum("batch nheads seqQ seqK, batch seqK nheads headsize -> batch seqQ nheads headsize", attention_probabilities, v)
 
-        out = rearrange(attention_values, "batch seqQ nheads headsize -> batch seqQ (nheads headsize)")
+        attention_values = rearrange(attention_values, "batch seqQ nheads headsize -> batch seqQ (nheads headsize)")
 
-        return out
+        output = self.W_O(attention_values)
 
+        return self.dropout(output)
 
+    def attention_pattern_pre_softmax(self, x: t.Tensor) -> t.Tensor:
 
+        q = rearrange(self.W_Q(x), "batch seq (nheads headsize) -> batch seq nheads headsize", nheads=self.num_heads)
+        k = rearrange(self.W_K(x), "batch seq (nheads headsize) -> batch seq nheads headsize", nheads=self.num_heads)
 
-
+        return einsum("batch seqQ nheads headsize, batch seqK nheads headsize -> batch nheads seqQ seqK", q, k) / (q.shape[-1] ** 0.5)
 
 
 class PositionalEncoding(nn.Module):
@@ -159,6 +146,7 @@ class ParenTransformer(nn.Module):
         self.encoder = nn.Embedding(ntoken, d_model)
         self.d_model = d_model
         self.nhead = nhead
+        self.nlayers = nlayers
 
         self.decoder = nn.Linear(d_model, nclasses)
         self.softmax = nn.LogSoftmax(dim=-1)
