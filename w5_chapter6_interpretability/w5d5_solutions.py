@@ -79,12 +79,12 @@ class DataSet:
         return cls([(s, b) for (s, b) in data_tuples if s[0] == start_char])
 
 
-N_SAMPLES = 5000
-data_tuples = data_tuples[:N_SAMPLES]
-data = DataSet(data_tuples)
-data_mini = data[:500]
-
 if MAIN:
+    N_SAMPLES = 5000
+    data_tuples = data_tuples[:N_SAMPLES]
+    data = DataSet(data_tuples)
+    data_mini = data[:500]
+
     bracket_lengths = [len(s[0]) for s in data]
     fig = px.histogram(
         title="Length of bracket strings in dataset",
@@ -136,15 +136,6 @@ def is_balanced_vectorized(tokens: t.Tensor) -> bool:
     return no_total_elevation_failure and no_negative_failure
 
 
-def is_balanced_vectorized_return_both(tokens: t.Tensor) -> bool:
-    table = t.tensor([0, 0, 0, 1, -1])
-    change = table[tokens].flip(0)
-    altitude = t.cumsum(change, -1)
-    total_elevation_failure = altitude[-1] != 0
-    negative_failure = altitude.max(0).values > 0
-    return total_elevation_failure, negative_failure
-
-
 if MAIN:
     for (tokens, expected) in zip(tokenizer.tokenize(examples), labels):
         actual = is_balanced_vectorized(tokens)
@@ -182,7 +173,6 @@ if MAIN:
 def get_post_final_ln_dir(model: ParenTransformer) -> t.Tensor:
     return model.decoder.weight[0] - model.decoder.weight[1]
 
-get_post_final_ln_dir(model)
 # %%
 
 def get_inputs(model: ParenTransformer, data: DataSet, module: nn.Module) -> t.Tensor:
@@ -313,6 +303,7 @@ def get_out_by_components(model: ParenTransformer, data: DataSet) -> t.Tensor:
 
     return t.stack(out, dim=0)
 
+
 # if MAIN:
 #     w5d5_tests.test_get_out_by_component(get_out_by_components, model, data_mini)
 
@@ -349,7 +340,7 @@ def hists_per_comp(magnitudes, data, n_layers=3, xaxis_range=(-1, 1)):
         fig.add_trace(go.Histogram(x=mag[data.isbal].numpy(), name="Balanced", marker_color="blue", opacity=0.5, legendgroup = '1', showlegend=title=="embeddings"), row=row, col=col)
         fig.add_trace(go.Histogram(x=mag[~data.isbal].numpy(), name="Unbalanced", marker_color="red", opacity=0.5, legendgroup = '2', showlegend=title=="embeddings"), row=row, col=col)
         fig.update_xaxes(title_text=title, row=row, col=col, range=xaxis_range)
-    fig.update_layout(width=1200, height=1200, barmode="overlay", legend=dict(yanchor="top", y=0.92, xanchor="left", x=0.4), title="Histograms of component significance")
+    fig.update_layout(width=1200, height=250*(n_layers+1), barmode="overlay", legend=dict(yanchor="top", y=0.92, xanchor="left", x=0.4), title="Histograms of component significance")
     fig.show()
     return fig
 
@@ -366,7 +357,6 @@ if MAIN:
     hists_per_comp(magnitudes, data, xaxis_range=[-10, 20])
 
 # %%
-
 
 def is_balanced_vectorized_return_both(tokens: t.Tensor) -> bool:
     tokens = tokens.flip(0)
@@ -407,6 +397,7 @@ if MAIN:
         category_orders={"color": failure_types_dict.keys()}
     ).update_traces(marker_size=4)
     fig.show()
+
 # %%
 
 if MAIN:
@@ -443,10 +434,11 @@ def get_attn_probs(model: ParenTransformer, tokenizer: SimpleTokenizer, data: Da
 if MAIN:
     attn_probs = get_attn_probs(model, tokenizer, data, 2, 0)
     attn_probs_open = attn_probs[data.starts_open].mean(0)[[0]]
-    px.bar(
+    fig = px.bar(
         y=attn_probs_open.squeeze().numpy(), labels={"y": "Probability", "x": "Key Position"},
         template="simple_white", height=500, width=600, title="Avg Attention Probabilities for '(' query from query 0"
     ).update_layout(showlegend=False, hovermode='x unified')
+    fig.show()
 
 # %%
 
@@ -510,23 +502,22 @@ if MAIN:
 # %%
 
 if MAIN:
-    hists_per_comp(magnitudes, data, n_layers=2, xaxis_range=(-7, 7))
+    fig = hists_per_comp(magnitudes, data, n_layers=2, xaxis_range=(-7, 7))
 
 # %%
 
+def mlp_attribution_scatter(data, magnitudes, failure_types, layer):
+    px.scatter(
+        x=data.open_proportion[data.starts_open], y=magnitudes[3+layer*3, data.starts_open], 
+        color=failure_types[data.starts_open], category_orders={"color": failure_types_dict.keys()},
+        title=f"Amount MLP {layer} writes in unbalanced direction for Head 2.0", 
+        template="simple_white", height=500, width=800,
+        labels={"x": "Open-proportion", "y": "Head 2.0 contribution"}
+    ).update_traces(marker_size=4, opacity=0.5).update_layout(legend_title_text='Failure type').show()
+
 if MAIN:
-    fig = px.scatter(
-        x=data.open_proportion[data.starts_open], y=magnitudes[3, data.starts_open], color=failure_types[data.starts_open], 
-        title="Amount MLP 0 writes in unbalanced direction for Head 2.0", template="simple_white", height=500, width=800,
-        labels={"x": "Open-proportion", "y": "Head 2.0 contribution"}, category_orders={"color": failure_types_dict.keys()}
-    ).update_traces(marker_size=4, opacity=0.5).update_layout(legend_title_text='Failure type')
-    fig.show()
-    fig = px.scatter(
-        x=data.open_proportion[data.starts_open], y=magnitudes[6, data.starts_open], color=failure_types[data.starts_open], 
-        title="Amount MLP 1 writes in unbalanced direction for Head 2.0", template="simple_white", height=500, width=800,
-        labels={"x": "Open-proportion", "y": "Head 2.0 contribution"}, category_orders={"color": failure_types_dict.keys()}
-    ).update_traces(marker_size=4, opacity=0.5).update_layout(legend_title_text='Failure type')
-    fig.show()
+    for layer in range(2):
+        mlp_attribution_scatter(data, magnitudes, failure_types, layer)
 
 # %%
 
@@ -540,216 +531,176 @@ def out_by_neuron(model, data, layer):
 
 @functools.cache
 def out_by_neuron_in_20_dir(model, data, layer):
-    by_neuruon = out_by_neuron(model, data, layer)
+    by_neuron = out_by_neuron(model, data, layer)
     direction = get_pre_20_dir(model, data)
-    return einsum("batch seq neuron out, out -> batch seq neuron", by_neuruon, direction)
+    return einsum("batch seq neuron out, out -> batch seq neuron", by_neuron, direction)
 
-def plot_all_neurons(model, data, layer):
-    neurons_in_d = out_by_neuron_in_20_dir(model, data, layer)[data.starts_open, 1, :].detach().flatten()
+def plot_neurons(model, data, failure_types, layer):
+    # Get neuron significances for head 2.0, sequence position #1 output
+    neurons_in_d = out_by_neuron_in_20_dir(model, data, layer)[data.starts_open, 1, :].detach()
+
+    # Get data that can be turned into a dataframe (plotly express is sometimes easier to use with a dataframe)
+    # Plot a scatter plot of all the neuron contributions, color-coded according to failure type, with slider to view neurons
     neuron_numbers = repeat(t.arange(model.d_model), "n -> (s n)", s=data.starts_open.sum())
+    failure_types = repeat(failure_types[data.starts_open], "s -> (s n)", n=model.d_model)
     data_open_proportion = repeat(data.open_proportion[data.starts_open], "s -> (s n)", n=model.d_model)
     df = pd.DataFrame({
-        "Output in 2.0 direction": neurons_in_d,
-        "Neuron number": neuron_numbers,
-        "Open-proportion": data_open_proportion
+        "Output in 2.0 direction": neurons_in_d.flatten(), "Neuron number": neuron_numbers,
+        "Open-proportion": data_open_proportion, "Failure type": failure_types
     })
-    fig = px.scatter(df, x="Open-proportion", y="Output in 2.0 direction", animation_frame="Neuron number", title=f"Neuron contributions from layer {layer}", template="simple_white", height=500, width=800).update_traces(marker_size=3, opacity=0.8)
-    fig.update_layout(xaxis_range=[0, 1], yaxis_range=[-5, 5])
-    fig.show()
+    px.scatter(
+        df, x="Open-proportion", y="Output in 2.0 direction", color="Failure type", animation_frame="Neuron number",
+        title=f"Neuron contributions from layer {layer}", template="simple_white", height=500, width=800
+    ).update_traces(marker_size=3).update_layout(xaxis_range=[0, 1], yaxis_range=[-5, 5]).show(renderer="browser")
 
-if MAIN:
-    plot_all_neurons(model, data, 0)
-    plot_all_neurons(model, data, 1)
-    # TODO - quantify the importance of neurons, and include that in the plot (like the solns kinda do)
+    # Work out the importance (average difference in unbalanced contribution between balanced and inbalanced dirs) for each neuron
+    # Plot a bar chart of the per-neuron importances
+    neuron_importances = neurons_in_d[~data.isbal[data.starts_open]].mean(0) - neurons_in_d[data.isbal[data.starts_open]].mean(0)
+    fig_bar = px.bar(
+        x=t.arange(model.d_model), y=neuron_importances, 
+        title=f"Importance of neurons in layer {layer}", 
+        labels={"x": "Neuron number", "y": "Mean contribution in unbalanced dir"},
+        template="simple_white", height=400, width=600, hovermode="x unified"
+    )
+    fig_bar.layout.updatemenus = []
+    fig_bar.show(renderer="browser")
 
 # %%
 
-
-# if MAIN:
-#     neuron_in_d_mlp0 = out_by_neuron_in_20_dir(model, data, 0)
-#     importance_mlp0 = neuron_in_d_mlp0[~data.isbal & data.starts_open, 1].mean(0) - neuron_in_d_mlp0[
-#         data.isbal, 1
-#     ].mean(0)
-
-#     neuron_in_d_mlp1 = out_by_neuron_in_20_dir(model, data, 1)
-#     importance_mlp1 = neuron_in_d_mlp1[~data.isbal & data.starts_open, 1].mean(0) - neuron_in_d_mlp1[
-#         data.isbal, 1
-#     ].mean(0)
-
-#     # most_important = torch.argmax(importance)
-#     print(torch.topk(importance_mlp0, k=20))
-#     # l0 - tensor([43, 33, 12, 10, 21,  3, 34, 39, 50, 42]))
-#     # l1 - tensor([10,  3, 53, 18, 31, 39,  9,  6, 19,  8]))
-
-#     print(torch.topk(importance_mlp1, k=20))
-#     plot_neuron(model, data, 1, 10)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+if MAIN:
+    for layer in range(2):
+        plot_neurons(model, data, failure_types, layer)
 
 # %%
 
 def get_Q_and_K(model: ParenTransformer, layer: int, head: int) -> Tuple[t.Tensor, t.Tensor]:
-    """
+    '''
     Get the Q and K weight matrices for the attention head at the given indices.
+
     Return: Tuple of two tensors, both with shape (embedding_size, head_size)
-    """
-    q_proj: nn.Linear = model.layers[layer].self_attn.W_Q
-    k_proj: nn.Linear = model.layers[layer].self_attn.W_K
-    num_heads = model.nhead
-    q_mats_by_head = rearrange(q_proj.weight, "(head head_size) out -> out head head_size", head=num_heads)
-    k_mats_by_head = rearrange(k_proj.weight, "(head head_size) out -> out head head_size", head=num_heads)
-    q_mat = q_mats_by_head[:, head]
-    assert q_mat.shape == (model.d_model, model.d_model // model.nhead)
-    k_mat = k_mats_by_head[:, head]
-    assert k_mat.shape == (model.d_model, model.d_model // model.nhead)
-    return q_mat, k_mat
+    '''
+    W_Q = rearrange(model.layers[layer].self_attn.W_Q.weight, "(nheads headsize) emb -> nheads emb headsize", nheads=model.nhead)
+    W_K = rearrange(model.layers[layer].self_attn.W_K.weight, "(nheads headsize) emb -> nheads emb headsize", nheads=model.nhead)
+
+    return W_Q[head], W_K[head]
 
 
 def qk_calc_termwise(
-    model: ParenTransformer,
-    layer: int,
-    head: int,
-    q_embedding: t.Tensor,
-    k_embedding: t.Tensor,
+    model: ParenTransformer, layer: int, head: int, q_embedding: t.Tensor, k_embedding: t.Tensor
 ) -> t.Tensor:
-    """
+    '''
     Get the pre-softmax attention scores that would be calculated by the given attention head from the given embeddings.
+
     q_embedding: tensor of shape (seq_len, embedding_size)
     k_embedding: tensor of shape (seq_len, embedding_size)
+
     Returns: tensor of shape (seq_len, seq_len)
-    """
-    q_mat, k_mat = get_Q_and_K(model, layer, head)
-    qs = einsum("i o, x i -> x o", q_mat, q_embedding)
-    ks = einsum("i o, y i -> y o", k_mat, k_embedding)
-    scores = einsum("x o, y o -> x y", qs, ks)
-    return scores.squeeze()
+    '''
+    Q, K = get_Q_and_K(model, layer, head)
+    q = einsum("e h, s e -> h s", Q, q_embedding)
+    k = einsum("e h, s e -> h s", K, k_embedding)
+    attention_scores = einsum("h sQ, h sK -> sQ sK", q, k)
+    return attention_scores / q.shape[0] ** 0.5
 
 
 # if MAIN:
 #     w5d5_tests.qk_test(model, get_Q_and_K)
-#     w5d5_tests.test_qk_calc_termwise(model, tokenizer, qk_calc_termwise)
+    # w5d5_tests.test_qk_calc_termwise(model, tokenizer, qk_calc_termwise)
 
-# CM: is there a reason we run the model instead of just model.encoder.weight[tokenizer.t_to_i["("]]
+# %%
 
 def embedding(model: ParenTransformer, tokenizer: SimpleTokenizer, char: str) -> torch.Tensor:
     assert char in ("(", ")")
-    input_id = tokenizer.t_to_i[char]
-    input = t.tensor([input_id]).to(DEVICE)
-    return model.encoder(input).clone()
-
+    tok = t.tensor([tokenizer.t_to_i[char]]) # Get token id, as a 1D tensor
+    return model.encoder(tok) # Get embedding of token
 
 # if MAIN:
-#     open_emb = embedding(model, tokenizer, "(")
-#     closed_emb = embedding(model, tokenizer, ")")
 #     w5d5_tests.embedding_test(model, tokenizer, embedding)
+
+# %%
 
 if MAIN:
     open_emb = embedding(model, tokenizer, "(")
     closed_emb = embedding(model, tokenizer, ")")
-
     pos_embeds = model.pos_encoder.pe
     open_emb_ln_per_seqpos = model.layers[0].norm1(open_emb.to(DEVICE) + pos_embeds[1:41])
     close_emb_ln_per_seqpos = model.layers[0].norm1(closed_emb.to(DEVICE) + pos_embeds[1:41])
-    attn_score_open_open = qk_calc_termwise(model, 0, 0, open_emb_ln_per_seqpos, open_emb_ln_per_seqpos)
-    attn_score_open_close = qk_calc_termwise(model, 0, 0, open_emb_ln_per_seqpos, close_emb_ln_per_seqpos)
+    attn_score_open_avg = qk_calc_termwise(model, 0, 0, open_emb_ln_per_seqpos, 0.5 * (open_emb_ln_per_seqpos + close_emb_ln_per_seqpos))
+    attn_prob_open = attn_score_open_avg.softmax(-1).detach().clone().numpy()
+    px.imshow(
+        attn_prob_open, 
+        color_continuous_scale="RdBu_r", height=500, width=550,
+        labels={"x": "Key Position", "y": "Query Position", "color": "Attn prob"},
+        title="Predicted Attention Probabilities for '(' query", origin="upper"
+    ).update_layout(margin=dict(l=60, r=60, t=80, b=40)).show()
 
-    attn_score_open_avg = (attn_score_open_open + attn_score_open_close) / 2
-    attn_prob_open = (attn_score_open_avg / (28**0.5)).softmax(-1).detach().clone().numpy()
-    plt.matshow(attn_prob_open, cmap="magma")
-    plt.xlabel("Key Position")
-    plt.ylabel("Query Position")
-    plt.title("Predicted Attention Probabilities for ( query")
+# %%
 
-    plt.gcf().set_size_inches(8, 6)
-    plt.colorbar()
-    plt.tight_layout()
-
-
-#%%
 def avg_attn_probs_0_0(
     model: ParenTransformer, data: DataSet, tokenizer: SimpleTokenizer, query_token: int
 ) -> t.Tensor:
-    """
+    '''
     Calculate the average attention probs for the 0.0 attention head for the provided data when the query is the given query token.
     Returns a tensor of shape (seq, seq)
-    """
+    '''
     attn_probs = get_attn_probs(model, tokenizer, data, 0, 0)
-    assert attn_probs.shape == (len(data), data.seq_length, data.seq_length)
     is_open = data.toks == query_token
-    assert is_open.shape == (len(data), data.seq_length)
     attn_probs_masked = t.where(is_open[:, :, None], attn_probs.double(), t.nan)
     out = t.nanmean(attn_probs_masked, dim=0)
-    assert out.shape == (data.seq_length, data.seq_length)
     return out
-
 
 if MAIN:
     data_len_40 = DataSet.with_length(data_tuples, 40)
     for paren in ("(", ")"):
         tok = tokenizer.t_to_i[paren]
         attn_probs_mean = avg_attn_probs_0_0(model, data_len_40, tokenizer, tok).detach().clone()
-        plt.matshow(attn_probs_mean, cmap="magma")
-        plt.ylabel("query position")
-        plt.xlabel("key position")
-        plt.title(f"with query = {paren}")
-        plt.show()
+        px.imshow(
+            attn_probs_mean, 
+            color_continuous_scale="RdBu_r", range_color=[0, 0.23], height=500, width=550,
+            labels={"x": "Key Position", "y": "Query Position", "color": "Attn prob"},
+            title=f"Attention patterns with query = {paren}", origin="upper"
+        ).update_layout(margin=dict(l=60, r=60, t=80, b=40)).show()
+        px.bar(
+            attn_probs_mean[1], title=f"Attention pattern for first query position, query token = {paren!r}",
+            labels={"index": "Sequence position", "value": "Average attention"}, template="simple_white", height=450, width=600
+        ).update_layout(showlegend=False, margin_l=100, yaxis_range=[0, 0.1], hovermode="x unified").show()
 
-if MAIN:
-    tok = tokenizer.t_to_i["("]
-    attn_probs_mean = avg_attn_probs_0_0(model, data_len_40, tokenizer, tok).detach().clone()
-    plt.plot(range(42), attn_probs_mean[1])
-    plt.ylim(0, None)
-    plt.xlim(0, 42)
-    plt.xlabel("Sequence position")
-    plt.ylabel("Average attention")
-    plt.show()
-
-
-def embedding_V_0_0(model, emb_in: t.Tensor) -> t.Tensor:
-    return emb_in @ get_WV(model, 0, 0).T.clone()
-
+# %%
 
 def embedding_OV_0_0(model, emb_in: t.Tensor) -> t.Tensor:
     return emb_in @ get_WOV(model, 0, 0).T.clone()
 
-
 if MAIN:
-    data_start_open = DataSet.with_start_char(data_tuples, "(")
-    attn0_ln_fit, r2 = get_ln_fit(model, data_start_open, model.layers[0].norm1, seq_pos=None)
-    attn0_ln_fit = t.tensor(attn0_ln_fit.coef_)
-    print("r^2: ", r2)
-    open_v = embedding_OV_0_0(model, model.layers[0].norm1(open_emb))
-    closed_v = embedding_OV_0_0(model, model.layers[0].norm1(closed_emb))
-    print(torch.linalg.norm(open_v), torch.linalg.norm(closed_v))
-    sim = F.cosine_similarity(open_v, closed_v, dim=1).item()
-    print("Cosine Similarity of 0.0 OV", sim)
+    open_emb = embedding(model, tokenizer, "(")
+    closed_emb = embedding(model, tokenizer, ")")
+    final_ln_fit, r2 = get_ln_fit(model, data, ln_module=model.layers[0].norm1, seq_pos=None)
+    L = t.tensor(final_ln_fit.coef_)
+    pe1 = model.pos_encoder.pe[1].clone() * 0
+    W_OV_layernorm_of_open = embedding_OV_0_0(model, L @ open_emb.squeeze())
+    W_OV_layernorm_of_closed = embedding_OV_0_0(model, L @ closed_emb.squeeze())
 
+    print(f"Magnitudes: open={W_OV_layernorm_of_open.norm()}, closed={W_OV_layernorm_of_closed.norm()}" )
+    print(f"Cosine similarity: {t.cosine_similarity(W_OV_layernorm_of_open, W_OV_layernorm_of_closed, dim=0)}")
 
+    v = W_OV_layernorm_of_open
 
+    # Visual plot of their similarities, across all dimensions:
 # %%
+
 
 if MAIN:
     print("Update the examples list below below find adversarial examples")
-    examples = ["()", "(()"]
+    examples = ["()", "(())", "))"]
+
+    lenA = 15
+    A = "(" * lenA + ")" * lenA
+    B = "(" * (19-lenA) + ")" * (19-lenA)
+    examples.append(A + ")(" + B)
+
+    m = max(len(ex) for ex in examples)
     toks = tokenizer.tokenize(examples).to(DEVICE)
     out = model(toks)
-    print("\n".join([f"{ex}: {p:.4%} balanced confidence" for ex, p in zip(examples, out.exp()[:, 1])]))
+    logit_diff = (out[:, 1] - out[:, 0]).detach().cpu().numpy()
+    print("\n".join([f"{ex:{m}} -> {p:.4%} balanced confidence" for (ex, p) in zip(examples, out.exp()[:, 1])]))
 
 # %%
