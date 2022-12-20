@@ -611,3 +611,215 @@ if MAIN:
     K_comp_circuit = find_K_comp_full_full_circuit(prev_token_head_index, ind_head_indices)
     print("Fraction of tokens where the highest activating key is the same token", top_1_acc(K_comp_circuit.T).item())
     del K_comp_circuit
+
+
+
+
+
+# FURTHER EXPLORATION
+
+def frobenius_norm(tensor):
+    """
+    Implicitly allows batch dimensions
+    """
+    return tensor.pow(2).sum([-2, -1])
+
+
+def get_q_comp_scores(W_QK, W_OV):
+    """
+    Returns a layer_1_index x layer_0_index tensor, where the i,j th entry is the Q-Composition score from head L0Hj to L1Hi
+    """
+    "SOLUTION"
+    q_full = t.einsum("Imn,imM->IinM", W_QK, W_OV)
+    comp_scores = frobenius_norm(q_full) / frobenius_norm(W_QK)[:, None] / frobenius_norm(W_OV)[None, :]
+    return comp_scores
+
+
+def get_k_comp_scores(W_QK, W_OV):
+    """
+    Returns a layer_1_index x layer_0_index tensor, where the i,j th entry is the K-Composition score from head L0Hj to L1Hi
+    """
+    "SOLUTION"
+    k_full = t.einsum("Inm,imM->IinM", W_QK, W_OV)
+    comp_scores = frobenius_norm(k_full) / frobenius_norm(W_QK)[:, None] / frobenius_norm(W_OV)[None, :]
+    return comp_scores
+
+
+def get_v_comp_scores(W_OV_1, W_OV_0):
+    """
+    Returns a layer_1_index x layer_0_index tensor, where the i,j th entry is the V-Composition score from head L0Hj to L1Hi
+    """
+    "SOLUTION"
+    v_full = t.einsum("Inm,imM->IinM", W_OV_1, W_OV_0)
+    comp_scores = frobenius_norm(v_full) / frobenius_norm(W_OV_1)[:, None] / frobenius_norm(W_OV_0)[None, :]
+    return comp_scores
+
+
+if MAIN:
+    W_O = model.blocks[0].attn.W_O
+    W_V = model.blocks[0].attn.W_V
+    W_OV_0 = t.einsum("imh,ihM->imM", W_O, W_V)
+    W_Q = model.blocks[1].attn.W_Q
+    W_K = model.blocks[1].attn.W_K
+    W_V = model.blocks[1].attn.W_V
+    W_O = model.blocks[1].attn.W_O
+    W_QK = t.einsum("ihm,ihM->imM", W_Q, W_K)
+    W_OV_1 = t.einsum("imh,ihM->imM", W_O, W_V)
+
+    q_comp_scores = get_q_comp_scores(W_QK, W_OV_0)
+    k_comp_scores = get_k_comp_scores(W_QK, W_OV_0)
+    v_comp_scores = get_v_comp_scores(W_OV_1, W_OV_0)
+    px.imshow(
+        to_numpy(q_comp_scores),
+        y=[f"L1H{h}" for h in range(cfg["n_heads"])],
+        x=[f"L0H{h}" for h in range(cfg["n_heads"])],
+        labels={"x": "Layer 0", "y": "Layer 1"},
+        title="Q Composition Scores",
+        color_continuous_scale="Blues",
+        zmin=0.0,
+    ).show()
+    px.imshow(
+        to_numpy(k_comp_scores),
+        y=[f"L1H{h}" for h in range(cfg["n_heads"])],
+        x=[f"L0H{h}" for h in range(cfg["n_heads"])],
+        labels={"x": "Layer 0", "y": "Layer 1"},
+        title="K Composition Scores",
+        color_continuous_scale="Blues",
+        zmin=0.0,
+    ).show()
+    px.imshow(
+        to_numpy(v_comp_scores),
+        y=[f"L1H{h}" for h in range(cfg["n_heads"])],
+        x=[f"L0H{h}" for h in range(cfg["n_heads"])],
+        labels={"x": "Layer 0", "y": "Layer 1"},
+        title="V Composition Scores",
+        color_continuous_scale="Blues",
+        zmin=0.0,
+    ).show()
+
+# %%
+
+def generate_single_random_comp_score() -> float:
+    """
+    Write a function which generates a single composition score for random matrices
+    """
+    "SOLUTION"
+    matrices = [t.empty((cfg["d_head"], cfg["d_model"])) for i in range(4)]
+    for mat in matrices:
+        nn.init.kaiming_uniform_(mat, a=np.sqrt(5))
+    W1 = matrices[0].T @ matrices[1]
+    W2 = matrices[2].T @ matrices[3]
+    W3 = W1 @ W2
+    return (frobenius_norm(W3) / frobenius_norm(W1) / frobenius_norm(W2)).item()
+
+
+if MAIN:
+    comp_scores_baseline = np.array([generate_single_random_comp_score() for i in range(200)])
+    print("Mean:", comp_scores_baseline.mean())
+    print("Std:", comp_scores_baseline.std())
+    px.histogram(comp_scores_baseline, nbins=50).show()
+# %%
+
+if MAIN:
+    px.imshow(
+        to_numpy(q_comp_scores),
+        y=[f"L1H{h}" for h in range(cfg["n_heads"])],
+        x=[f"L0H{h}" for h in range(cfg["n_heads"])],
+        labels={"x": "Layer 0", "y": "Layer 1"},
+        title="Q Composition Scores",
+        color_continuous_scale="RdBu",
+        color_continuous_midpoint=comp_scores_baseline.mean(),
+    ).show()
+    px.imshow(
+        to_numpy(k_comp_scores),
+        y=[f"L1H{h}" for h in range(cfg["n_heads"])],
+        x=[f"L0H{h}" for h in range(cfg["n_heads"])],
+        labels={"x": "Layer 0", "y": "Layer 1"},
+        title="K Composition Scores",
+        color_continuous_scale="RdBu",
+        color_continuous_midpoint=comp_scores_baseline.mean(),
+    ).show()
+    px.imshow(
+        to_numpy(v_comp_scores),
+        y=[f"L1H{h}" for h in range(cfg["n_heads"])],
+        x=[f"L0H{h}" for h in range(cfg["n_heads"])],
+        labels={"x": "Layer 0", "y": "Layer 1"},
+        title="V Composition Scores",
+        color_continuous_scale="RdBu",
+        color_continuous_midpoint=comp_scores_baseline.mean(),
+    ).show()
+
+# %%
+
+def stranded_svd(A: t.Tensor, B: t.Tensor) -> tuple[t.Tensor, t.Tensor, t.Tensor]:
+    """
+    Returns the SVD of AB in the torch format (ie (U, S, V^T))
+    """
+    "SOLUTION"
+    UA, SA, VhA = t.svd(A)
+    UB, SB, VhB = t.svd(B)
+    intermed = SA.diag() @ VhA.T @ UB @ SB.diag()
+    UC, SC, VhC = t.svd(intermed)
+    return (UA @ UC), SC, (VhB @ VhC).T
+
+
+def stranded_composition_score(W_A1: t.Tensor, W_A2: t.Tensor, W_B1: t.Tensor, W_B2: t.Tensor):
+    """
+    Returns the composition score for W_A = W_A1 @ W_A2 and W_B = W_B1 @ W_B2, with the entries in a low-rank factored form
+    """
+    "SOLUTION"
+    UA, SA, VhA = stranded_svd(W_A1, W_A2)
+    UB, SB, VhB = stranded_svd(W_B1, W_B2)
+    normA = SA.pow(2).sum()
+    normB = SB.pow(2).sum()
+    intermed = SA.diag() @ VhA.T @ UB @ SB.diag()
+    UC, SC, VhC = t.svd(intermed)
+    return SC.pow(2).sum() / normA / normB
+
+
+# %%
+
+def ablation_induction_score(prev_head_index: int, ind_head_index: int) -> t.Tensor:
+    """
+    Takes as input the index of the L0 head and the index of the L1 head, and then runs with the previous token head ablated and returns the induction score for the ind_head_index now.
+    """
+
+    def ablation_hook(v, hook):
+        v[:, :, prev_head_index] = 0.0
+        return v
+
+    def induction_pattern_hook(attn, hook):
+        hook.ctx[prev_head_index] = attn[0, ind_head_index].diag(-(seq_len - 1)).mean()
+
+    model.run_with_hooks(
+        rep_tokens,
+        fwd_hooks=[
+            ("blocks.0.attn.hook_v", ablation_hook),
+            ("blocks.1.attn.hook_attn", induction_pattern_hook),
+        ],
+    )
+    return model.blocks[1].attn.hook_attn.ctx[prev_head_index]
+
+
+if MAIN:
+    for i in range(cfg["n_heads"]):
+        print(f"Ablation effect of head {i}:", ablation_induction_score(i, 4).item())
+
+
+# %%
+
+if MAIN:
+
+    text = "Hello world"
+    input_tokens = model.to_tokens(text)
+
+    head_index = 5
+    layer = 4
+
+    def ablation_hook(value, hook):
+        # value is the value activation for this attention layer
+        # It has shape [batch, position, head_index, d_head]
+        value[:, :, head_index, :] = 0.0
+        return value
+
+    logits = model.run_with_hooks(input_tokens, fwd_hooks=[(f"blocks.{layer}.attn.hook_v", ablation_hook)])
